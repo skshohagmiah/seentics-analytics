@@ -41,7 +41,6 @@ services:
     volumes:
       - ./core:/app
       - /app/node_modules
-      - ./data/maxmind:/data/maxmind:ro
     networks:
       - seentics-network
     restart: unless-stopped
@@ -71,7 +70,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: seentics-minio
     ports:
       - "9000:9000"
@@ -79,6 +78,7 @@ services:
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
+      - MINIO_API_CORS_ALLOW_ORIGIN=*
     command: server /data --console-address ":9001"
     volumes:
       - seentics-minio-v3:/data
@@ -92,7 +92,7 @@ services:
       retries: 3
 
   createbuckets:
-    image: minio/mc
+    image: quay.io/minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy
@@ -116,7 +116,7 @@ services:
       - ./web:/app
       - /app/node_modules
       - /app/.next
-    command: sh -c "mkdir -p .next/cache && rm -rf .next/cache/* && npm install --legacy-peer-deps && npm run dev"
+    command: npm run dev
     depends_on:
       api:
         condition: service_healthy
