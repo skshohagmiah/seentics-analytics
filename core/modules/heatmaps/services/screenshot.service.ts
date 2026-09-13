@@ -37,7 +37,7 @@ async function captureAndUpsert(
 
   const result = await captureAndStoreScreenshot(
     request.pageUrl,
-    config.s3.bucket,
+    config.s3.heatmapBucket,
     resolved.websiteId,
     normalizedPagePath,
     {

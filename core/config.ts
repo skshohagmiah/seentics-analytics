@@ -46,6 +46,13 @@ export function env() {
   const isProduction = environment === "production";
 
   const bucket = process.env.S3_BUCKET_REPLAYS ?? process.env.S3_BUCKET ?? "seentics-replays";
+  /**
+   * Heatmap screenshots and layout snapshots. Defaults to the replay bucket, so a
+   * single-bucket deployment keeps working untouched; set `S3_BUCKET_HEATMAPS` to split
+   * them. Empty falls back rather than addressing a bucket named "" — compose passes
+   * the variable through with an empty default.
+   */
+  const heatmapBucket = (process.env.S3_BUCKET_HEATMAPS ?? "").trim() || bucket;
   const region = process.env.S3_REGION ?? process.env.AWS_REGION ?? "auto";
   const endpoint = process.env.S3_ENDPOINT;
   /** Host used only in presigned GET URLs (browser must resolve it). When unset, `endpoint` is used. */
@@ -180,7 +187,7 @@ const replayChunkFlushMs = parseIntEnv(process.env.REPLAY_CHUNK_FLUSH_MS, 30_000
     globalApiKey,
     environment,
     isProduction,
-    s3: { bucket, region, endpoint, publicEndpoint: s3PublicEndpoint, accessKey, secretKey },
+    s3: { bucket, heatmapBucket, region, endpoint, publicEndpoint: s3PublicEndpoint, accessKey, secretKey },
     presignTtlMs: Math.max(60, presignTtlSec) * 1000,
     spoolIdleMs,
     replayChunkFlushMs: Math.max(5_000, replayChunkFlushMs),

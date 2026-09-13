@@ -115,6 +115,7 @@ export class RetentionService {
       // across thousands of object-storage deletes.
       batchSize: Math.max(50, Math.min(2000, cfg.dataRetention.replayDeleteBatchSize)),
       bucket: cfg.s3.bucket,
+      heatmapBucket: cfg.s3.heatmapBucket,
     };
 
     for (const target of sites) {

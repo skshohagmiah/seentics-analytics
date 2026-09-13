@@ -55,9 +55,9 @@ export async function readLayoutSnapshot(
   // The DOM snapshot is the primary form; the JPEG is the fallback for pages
   // captured before DOM snapshots existed or where the DOM upload failed.
   const htmlUrl = row.html_s3_key
-    ? await presignGet(cfg.s3.bucket, row.html_s3_key, expMs)
+    ? await presignGet(cfg.s3.heatmapBucket, row.html_s3_key, expMs)
     : undefined;
-  const imageUrl = row.s3_key ? await presignGet(cfg.s3.bucket, row.s3_key, expMs) : undefined;
+  const imageUrl = row.s3_key ? await presignGet(cfg.s3.heatmapBucket, row.s3_key, expMs) : undefined;
 
   return {
     layout: {
@@ -132,7 +132,7 @@ export async function storeDashboardScreenshot(
   if (!Number.isFinite(dH) || dH < MIN_PLAUSIBLE_DOC_PX) dH = FALLBACK_DOC_HEIGHT;
 
   const key = heatmapScreenshotKey(resolved.websiteId, layoutPathSlot(resolved.websiteId, normalizedPath));
-  await putJpeg(cfg.s3.bucket, key, jpeg);
+  await putJpeg(cfg.s3.heatmapBucket, key, jpeg);
   await upsertLayoutSnapshot(resolved.websiteId, normalizedPath, key, sum, dW, dH);
   return key;
 }

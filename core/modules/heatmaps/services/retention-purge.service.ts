@@ -50,7 +50,7 @@ export class HeatmapRetentionPurge implements RetentionPurge {
     if (shots.length > 0) {
       const keys = shots.map((s) => s.s3_key).filter(Boolean);
       try {
-        await deleteS3Objects(options.bucket, keys);
+        await deleteS3Objects(options.heatmapBucket, keys);
         snapshotObjects += keys.length;
       } catch (e) {
         log.warn({

@@ -63,7 +63,7 @@ export class HeatmapEngine implements HeatmapIngest {
     snapshots?: SnapshotIngestService;
   } = {}) {
     this.snapshots =
-      opts.snapshots ?? new SnapshotIngestService(env().s3.bucket, opts.websites ?? null);
+      opts.snapshots ?? new SnapshotIngestService(env().s3.heatmapBucket, opts.websites ?? null);
   }
 
   /**

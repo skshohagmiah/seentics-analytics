@@ -53,8 +53,10 @@ export type RetentionOptions = {
    * network calls.
    */
   batchSize: number;
-  /** Object-storage bucket holding recordings and heatmap snapshots. */
+  /** Object-storage bucket holding session recordings. */
   bucket: string;
+  /** Bucket holding heatmap screenshots and layout snapshots; may equal `bucket`. */
+  heatmapBucket: string;
 };
 
 /**
