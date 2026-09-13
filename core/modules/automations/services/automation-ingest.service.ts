@@ -12,6 +12,6 @@ import type { AutomationTriggerWriter } from "../interfaces";
  */
 export class AutomationIngestService implements AutomationTriggerWriter {
   async writeTriggers(batchId: string, rows: AutomationTriggerQueued[]): Promise<void> {
-    await applyBatchOnce(batchId, "automations", (tx) => ingestAutomationTriggersBatch(tx, rows));
+    await applyBatchOnce(batchId, (tx) => ingestAutomationTriggersBatch(tx, rows));
   }
 }

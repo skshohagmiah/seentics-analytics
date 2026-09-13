@@ -1,3 +1,4 @@
+import { automationsLane, profilesLane } from "./ingest-lane";
 import type { WebsitesModule } from "../websites/interfaces";
 import type { AutomationsModule } from "./interfaces";
 import { AutomationUsageCounter } from "./services/usage-count.service";
@@ -18,13 +19,21 @@ export function initAutomationsModule(deps: {
     deps.websitesModule.query,
   );
 
+  const triggers = new AutomationIngestService();
+  const visitorProfiles = new VisitorProfileService();
+
   return {
+    lanes: {
+      automations: automationsLane(triggers),
+      profiles: profilesLane(visitorProfiles),
+    },
+
     trackerSettings: automations,
     // Built here so it publishes onto the real bus. An evaluation service holding its
     // own bus would fire `automation.action_executed` at nobody.
     evaluation: new AutomationEvaluationService(),
-    triggers: new AutomationIngestService(),
-    visitorProfiles: new VisitorProfileService(),
+    triggers,
+    visitorProfiles,
     retention: new AutomationRetentionPurge(),
     usage: new AutomationUsageCounter(),
     routes: createAutomationRoutes({

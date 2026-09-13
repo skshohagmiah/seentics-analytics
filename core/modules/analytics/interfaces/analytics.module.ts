@@ -1,3 +1,4 @@
+import type { LaneSpec } from "../../ingest/interfaces";
 import type { AuthedRouter } from "../../../platform/http/router";
 import type { UsageCounter } from "../../../platform/usage";
 import type { RetentionPurge } from "../../../platform/retention";
@@ -21,6 +22,14 @@ import type {
  * `analytics_events` exists.
  */
 export interface AnalyticsModule {
+  /**
+   * This module's ingest lanes, for the composition root to register.
+   *
+   * Two, not one: funnel events go to the same writer and the same table, but travel in
+   * their own lane so a funnel backlog cannot delay pageview writes.
+   */
+  lanes: { analytics: LaneSpec; funnels: LaneSpec };
+
   /**
    * Trailing-30-day figures for many sites at once, keyed by `websiteId`.
    *

@@ -26,15 +26,9 @@ class FakeQueue implements IngestQueue {
   events: { websiteId: string; rows: TrackerEvent[] }[] = [];
   profiles: VisitorProfileWrite[] = [];
 
-  enqueueEvents(websiteId: string, rows: TrackerEvent[]): void {
-    this.events.push({ websiteId, rows });
-  }
-  enqueueFunnels(): void {}
-  enqueueRecordings(): void {}
-  enqueueHeatmaps(): void {}
-  enqueueAutomations(): void {}
-  enqueueProfiles(rows: VisitorProfileWrite[]): void {
-    this.profiles.push(...rows);
+  enqueue(lane: string, websiteId: string, rows: readonly unknown[]): void {
+    if (lane === "analytics") this.events.push({ websiteId, rows: rows as TrackerEvent[] });
+    if (lane === "profiles") this.profiles.push(...(rows as VisitorProfileWrite[]));
   }
 }
 

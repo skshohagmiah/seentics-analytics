@@ -75,7 +75,7 @@ export function env() {
    * How long a session with an empty spool buffer is kept before it is dropped.
    *
    * Kept (not dropped) rather than purged eagerly so `nextChunkSeq` survives between
-   * flush windows — see the note at the end of `ReplaySpool.doFlushChunk`. The spool
+   * flush windows — see the note at the end of `SessionChunkBuffer.doFlushChunk`. The spool
    * floors this at the flush window for the same reason. It defaults high because the
    * cost of holding an idle entry is one small object, and the cost of dropping one too
    * early is a cold S3 listing that can overwrite chunk 0.

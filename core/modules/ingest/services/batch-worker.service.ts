@@ -1,21 +1,8 @@
 import type { Logger } from "../../../platform/lib/logger";
-import type { AutomationTriggerQueued, TrackerEvent } from "../../../platform/lib/types";
-import type { HeatmapTrackerEvent } from "../../heatmaps/interfaces";
-import type { VisitorProfileWrite } from "../../automations/interfaces";
-import type { BatchQueueStore, IngestCategory, IngestSinks, QueuedBatch } from "../interfaces";
+import type { BatchQueue, IngestLane, LaneRegistry, QueuedBatch } from "../interfaces";
 
-/** Every category the worker drains. Order is only the order it polls them. */
-const CATEGORIES: readonly IngestCategory[] = [
-  "analytics",
-  "funnels",
-  "automations",
-  "recordings",
-  "heatmaps",
-  "profiles",
-];
-
-export type IngestWorkerOptions = {
-  /** Batches claimed per category per tick. */
+export type BatchWorkerOptions = {
+  /** Batches claimed per lane per tick. */
   batchSize?: number;
   /** Delay between ticks when the last one found nothing. */
   idleIntervalMs?: number;
@@ -28,7 +15,7 @@ export type IngestWorkerOptions = {
 /** Ceiling for the claim-failure backoff. Long enough to stay quiet, short enough to recover promptly. */
 const MAX_CLAIM_BACKOFF_MS = 30_000;
 
-const DEFAULTS: Required<IngestWorkerOptions> = {
+const DEFAULTS: Required<BatchWorkerOptions> = {
   batchSize: 20,
   idleIntervalMs: 250,
   maxAttempts: 5,
@@ -36,29 +23,29 @@ const DEFAULTS: Required<IngestWorkerOptions> = {
 };
 
 /**
- * Drains the durable queue into the module sinks.
+ * Drains the durable queue into each lane's own write.
  *
- * The counterpart to `IngestQueueService`: that side batches and enqueues, this side
+ * The counterpart to `CollectBuffer`: that side batches and enqueues, this side
  * claims and applies. Splitting them is what makes the pipeline survive a restart — the
  * batch is a committed row before any write is attempted, so a crash costs at most the
  * batches currently in flight instead of every in-memory buffer.
  *
- * Each category is polled independently, and that isolation is the point. Heatmaps is the
+ * Each lane is polled independently, and that isolation is the point. Heatmaps is the
  * slowest consumer by a wide margin — aggregating upserts plus Playwright captures — and
  * in the single-flush design its slowness delayed analytics writes for every site. Here a
- * stalled heatmap category drains at its own pace while analytics keeps up.
+ * stalled heatmap lane drains at its own pace while analytics keeps up.
  *
  * A failed batch is retried, then **parked**, never dropped. The in-memory flush drops a
  * batch after three attempts with a log line, which is defensible when the whole window is
  * milliseconds and indefensible once the batch is a durable row you could have replayed.
  *
  * Claiming writes a lease rather than holding a lock — see `claimPendingBatches`. What that
- * costs this side is the obligation to give a claim back: `markCompleted` and `markFailed`
- * both clear it, and `drainCategory` releases anything a shutdown left unapplied.
+ * costs this side is the obligation to give a claim back: the apply's own transaction and `markFailed`
+ * both clear it, and `drainLane` releases anything a shutdown left unapplied.
  */
-export class IngestWorker {
+export class BatchWorker {
   private readonly log: Logger;
-  private readonly opts: Required<IngestWorkerOptions>;
+  private readonly opts: Required<BatchWorkerOptions>;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private draining = false;
   private stopped = false;
@@ -73,22 +60,16 @@ export class IngestWorker {
    * Drives an exponential backoff, and suppresses the log after the first. A claim
    * failure means the database is unreachable or the table is missing — conditions that
    * persist — so retrying at the idle interval produced twenty identical lines per second
-   * across five categories and buried everything else in the log.
+   * across five lanes and buried everything else in the log.
    */
   private claimFailures = 0;
 
   constructor(
-    private readonly store: BatchQueueStore,
-    private readonly sinks: IngestSinks,
-    /**
-     * Announces `analytics.batch_ingested` once rows are actually in the table.
-     *
-     * Published here rather than on enqueue: the event means the data is queryable, and a
-     * batch that ends up parked never wrote anything. Automation evaluation subscribes to
-     * it to know a site has fresh data.
-     */
+    private readonly store: BatchQueue,
+    /** Every lane's spec, keyed by name — see `LaneSpec`. */
+    private readonly registry: LaneRegistry,
     logger: Logger,
-    options: IngestWorkerOptions = {},
+    options: BatchWorkerOptions = {},
   ) {
     this.log = logger.child({ category: "ingest_worker" });
     this.opts = { ...DEFAULTS, ...options };
@@ -106,7 +87,7 @@ export class IngestWorker {
    *
    * Awaiting matters: a batch in flight is mid-apply against a sink, and walking away
    * from it would leave the write half-done with the lease still held. Letting the tick
-   * finish lets `drainCategory` hand back whatever it never started.
+   * finish lets `drainLane` hand back whatever it never started.
    */
   async stop(): Promise<void> {
     this.stopped = true;
@@ -117,16 +98,16 @@ export class IngestWorker {
     while (this.draining) await new Promise((r) => setTimeout(r, 10));
   }
 
-  /** Drain every category once. Exposed so a test or a shutdown can force a pass. */
+  /** Drain every lane once. Exposed so a test or a shutdown can force a pass. */
   async drainOnce(): Promise<number> {
     if (this.draining) return 0;
     this.draining = true;
     try {
       let applied = 0;
-      // Sequentially, not in parallel: the sinks share a connection pool, and five
-      // concurrent category drains would starve the request path that shares it.
-      for (const category of CATEGORIES) {
-        applied += await this.drainCategory(category);
+      // Sequentially, not in parallel: the lanes share a connection pool, and draining
+      // all six at once would starve the request path that shares it.
+      for (const lane of Object.keys(this.registry) as IngestLane[]) {
+        applied += await this.drainLane(lane);
       }
       await this.pruneIfDue();
       return applied;
@@ -140,23 +121,23 @@ export class IngestWorker {
     return { applied: this.appliedCount, failed: this.failedCount };
   }
 
-  private async drainCategory(category: IngestCategory): Promise<number> {
+  private async drainLane(lane: IngestLane): Promise<number> {
     let claimed: QueuedBatch[];
     try {
-      claimed = await this.store.claimPending(category, this.opts.batchSize, this.opts.maxAttempts);
+      claimed = await this.store.claimPending(lane, this.opts.batchSize, this.opts.maxAttempts);
     } catch (err) {
       // A claim failure is the database being unreachable or the table being absent, not
       // a bad batch — there is nothing to park. Logged once per outage rather than per
       // tick; `tick` backs off so the condition is not hammered.
       if (this.claimFailures === 0) {
-        this.log.error({ msg: "ingest_claim_failed", category, err: errText(err) });
+        this.log.error({ msg: "ingest_claim_failed", lane, err: errText(err) });
       }
       this.claimFailures += 1;
       return 0;
     }
 
     if (this.claimFailures > 0) {
-      this.log.info({ msg: "ingest_claim_recovered", category, after: this.claimFailures });
+      this.log.info({ msg: "ingest_claim_recovered", lane, after: this.claimFailures });
       this.claimFailures = 0;
     }
 
@@ -181,12 +162,14 @@ export class IngestWorker {
 
   private async applyOne(batch: QueuedBatch): Promise<boolean> {
     try {
+      // No separate completion write: `applyBatchOnce` inside the lane's own write flips
+      // `completed_at` in the same transaction as the rows, which is what makes the apply
+      // exactly-once rather than merely retried.
       await this.dispatch(batch);
-      await this.store.markCompleted(batch.batchId);
       this.appliedCount += 1;
       this.log.debug({
         msg: "ingest_batch_applied",
-        category: batch.category,
+        lane: batch.lane,
         rows: batch.rowCount,
       });
       return true;
@@ -203,7 +186,7 @@ export class IngestWorker {
       const parked = attempts >= this.opts.maxAttempts;
       this.log[parked ? "error" : "warn"]({
         msg: parked ? "ingest_batch_parked" : "ingest_batch_retrying",
-        category: batch.category,
+        lane: batch.lane,
         batch_id: batch.batchId,
         attempts,
         rows: batch.rowCount,
@@ -214,41 +197,20 @@ export class IngestWorker {
   }
 
   /**
-   * Hand a batch to the module that owns its data.
+   * Hand a batch to the lane that owns it.
    *
-   * The payload shapes are the sinks' own input types, cast back from JSON. That coupling
-   * is why the batch id is content-derived: a change to one of these shapes changes the
-   * hash, so an old queued batch and a new one can never be confused for each other.
+   * Rows are the lane's own input type, cast back from JSON. That coupling is why the
+   * batch id is content-derived: a change to one of those shapes changes the hash, so an
+   * old queued batch and a new one can never be confused for each other.
    */
   private async dispatch(batch: QueuedBatch): Promise<void> {
-    const { batchId, payload } = batch;
-
-    switch (batch.category) {
-      case "analytics":
-      case "funnels": {
-        const websiteId = payload.websiteId as string;
-        const events = payload.events as TrackerEvent[];
-        const inserted = await this.sinks.writeAnalyticsBatch(batchId, websiteId, events);
-
-        // Zero means the batch had already been applied — a normal redelivery, and not
-        // something to announce a second time.
-        if (inserted > 0) {
-        }
-        return;
-      }
-      case "automations":
-        await this.sinks.writeAutomationTriggers(batchId, payload.rows as AutomationTriggerQueued[]);
-        return;
-      case "recordings":
-        await this.sinks.processRecordings(batchId, payload.events as TrackerEvent[]);
-        return;
-      case "heatmaps":
-        await this.sinks.processHeatmaps(batchId, payload.events as HeatmapTrackerEvent[]);
-        return;
-      case "profiles":
-        await this.sinks.writeVisitorProfiles(batchId, payload.rows as VisitorProfileWrite[]);
-        return;
+    const spec = this.registry[batch.lane];
+    if (!spec) {
+      // A lane that no longer exists — a feature removed while its batches were still
+      // queued. Parking beats throwing on every tick forever.
+      throw new Error(`no lane registered for '${batch.lane}'`);
     }
+    await spec.apply(batch.batchId, batch.partitionKey, batch.payload.rows as never[]);
   }
 
   /** Prune applied rows on the same cadence as the outbox does, not every tick. */
@@ -275,7 +237,7 @@ export class IngestWorker {
     const applied = await this.drainOnce();
     if (this.stopped) return;
 
-    // No delay while there is work: a backlog drains as fast as the sinks allow. On a
+    // No delay while there is work: a backlog drains as fast as the lanes allow. On a
     // claim outage, back off exponentially to a ceiling — the condition is external and
     // will not clear because we asked again sooner.
     if (this.claimFailures > 0) {

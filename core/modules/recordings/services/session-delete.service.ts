@@ -1,5 +1,5 @@
 import { env } from "../../../config";
-import { getReplayEngine } from "./recording-engine.service";
+import { recordingIngestService } from "./recording-ingest.service";
 import { deleteSession } from "../repositories/recording.repository";
 import { deleteSessionPrefix } from "../../../platform/lib/s3";
 
@@ -14,7 +14,7 @@ export async function batchDeleteReplaySessions(
   websiteId: string,
   sessionIds: string[],
 ) {
-  const engine = getReplayEngine();
+  const engine = recordingIngestService();
   const bucket = env().s3.bucket;
 
   // Remove all in-memory spools first (synchronous, no await)

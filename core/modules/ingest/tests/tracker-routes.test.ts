@@ -184,12 +184,10 @@ function makeFakeQueue() {
   return {
     events: [] as unknown[],
     profiles: [] as unknown[],
-    enqueueEvents(_s: string, e: unknown[]) { this.events.push(...e); },
-    enqueueFunnels() {},
-    enqueueRecordings() {},
-    enqueueHeatmaps() {},
-    enqueueAutomations() {},
-    enqueueProfiles(rows: unknown[]) { this.profiles.push(...rows); },
+    enqueue(lane: string, _websiteId: string, rows: readonly unknown[]) {
+      if (lane === "analytics") this.events.push(...rows);
+      if (lane === "profiles") this.profiles.push(...rows);
+    },
   };
 }
 

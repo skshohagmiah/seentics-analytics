@@ -6,7 +6,7 @@ import { isJpeg } from "./shared";
 /**
  * Tracker events to storable rows.
  *
- * Split out of `heatmap-engine.service` because none of it touches the engine's state:
+ * Split out of `heatmap-ingest.service` because none of it touches the engine's state:
  * these are total functions from an event to a row, and every hostile input the tracker
  * can send — a coordinate that is a string, a viewport of zero, an image that is not a
  * JPEG — is decided here. That made them the part of the engine most worth testing and

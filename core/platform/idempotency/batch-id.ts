@@ -19,7 +19,7 @@ import { createHash } from "node:crypto";
  * drag `db` into that import graph — the same trap `OutboxPublisher` avoids by keeping
  * its store import type-only.
  */
-export function batchIdFor(rows: readonly unknown[]): string {
+export function batchIdFromContent(rows: readonly unknown[]): string {
   const hash = createHash("sha256");
 
   /*
@@ -48,4 +48,22 @@ export function batchIdFor(rows: readonly unknown[]): string {
   hash.update("]");
 
   return hash.digest("hex").slice(0, 32);
+}
+
+/**
+ * Serialize a batch once and derive its id from those same bytes.
+ *
+ * The queue needs both: the id to deduplicate on, and the JSON to store in the payload
+ * column. Producing them separately meant serializing every batch twice — once here to
+ * hash it, once again inside the driver for the `jsonb` parameter — which for a heatmap
+ * batch carrying megabytes of base64 is a second full pass on the only thread there is.
+ *
+ * The digest is identical to `batchIdFromContent`, because the streaming form above emits
+ * exactly the bytes `JSON.stringify` produces. That equality is load-bearing and pinned by
+ * a test: if the two ever diverged, a batch queued under one id could be applied again
+ * under the other.
+ */
+export function serializeBatch(rows: readonly unknown[]): { json: string; batchId: string } {
+  const json = JSON.stringify(rows);
+  return { json, batchId: createHash("sha256").update(json).digest("hex").slice(0, 32) };
 }

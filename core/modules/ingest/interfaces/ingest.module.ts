@@ -1,16 +1,17 @@
 import type { PublicRouter } from "../../../platform/http/router";
 import type { ModuleLifecycle } from "../../../app/module";
-import type { IngestSinks } from "./index";
+import type { IngestQueue } from "./index";
 
 /** Everything the ingest module offers. */
 export interface IngestModule extends ModuleLifecycle {
   /**
-   * Where the four downstream modules' data goes.
+   * The same buffer `/collect` writes into.
    *
-   * Exposed because the `/internal` collectors write to the same four targets as
-   * `/collect` does; without this they would need their own wiring to the same places.
+   * Exposed because the `/internal` collectors accept the same data over a server-to-server
+   * API, and routing them through the queue rather than straight at the writers gives them
+   * the same batching, retry and exactly-once handling for free.
    */
-  sinks: IngestSinks;
+  queue: IngestQueue;
 
   /** No auth context: the tracker is anonymous by design. */
   routes: PublicRouter;

@@ -104,7 +104,7 @@ export interface RecordingMutations {
  * The ingest write path.
  *
  * The recordings engine consumes raw tracker events; ingest holds this interface
- * rather than the engine, which is what removed its `getReplayEngine()` call — a
+ * rather than the engine, which is what removed its `recordingIngestService()` call — a
  * reach into this module's process-wide singleton that no test could substitute.
  */
 export interface RecordingIngest {

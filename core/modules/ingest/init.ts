@@ -1,61 +1,56 @@
 import { log as baseLog, type Logger } from "../../platform/lib/logger";
-import type { AnalyticsModule } from "../analytics/interfaces";
 import type { AutomationsModule } from "../automations/interfaces";
 import type { FunnelsModule } from "../funnels/interfaces";
 import type { HeatmapsModule } from "../heatmaps/interfaces";
-import type { RecordingsModule } from "../recordings/interfaces";
 import type { WebsitesModule } from "../websites/interfaces";
-import type { IngestModule } from "./interfaces";
+import type { IngestModule, LaneRegistry } from "./interfaces";
 import { createTrackerRoutes } from "./routes";
-import { IngestQueueService } from "./services/ingest-queue.service";
-import { IngestWorker } from "./services/ingest-worker.service";
+import { CollectBuffer } from "./services/collect-buffer.service";
+import { BatchWorker } from "./services/batch-worker.service";
 import { postgresBatchQueue } from "./repositories/postgres-batch-queue";
-import { ModuleIngestSinks } from "./services/module-sinks";
 
 /**
  * Build the ingest module.
  *
- * Ingest depends on more modules than anything else here — it is the write half of the
- * product, sorting a mixed tracker batch and handing each category to whoever owns the
- * data — so this is where taking modules whole pays off most: five module objects
- * instead of nine unpacked capabilities, and every member of each is still an
- * interface.
+ * The registry is the whole composition: each feature contributes one `LaneSpec` — how its
+ * rows partition, how much of them to buffer, and how to write them — and ingest supplies
+ * only the machinery that is genuinely generic. Adding a feature's ingest is one entry
+ * here and one file in the owning module; removing one is deleting both.
  *
- * The two engines arrive as the modules' own `ingest()` getters. Both arm flush timers
- * and open storage clients on construction, so resolving them here would mean building
- * the graph started background work.
+ * The two engines arrive as their modules' `ingest` getters rather than resolved objects.
+ * Both arm flush timers and open storage clients on construction, so resolving them here
+ * would mean merely building the graph started background work.
  */
 export function initIngestModule(deps: {
-  analyticsModule: AnalyticsModule;
+  /**
+   * Every lane, assembled by the composition root from the modules that own the data.
+   *
+   * Passed in rather than built here: a lane is a *value* from a peer module, and ingest
+   * importing peers' code — rather than their interfaces — is the coupling this module
+   * has spent three refactors removing.
+   */
+  registry: LaneRegistry;
+  /** For the tracker `/init` and `/automations/evaluate` surfaces, not for ingest. */
   automationsModule: AutomationsModule;
-  recordingsModule: RecordingsModule;
-  heatmapsModule: HeatmapsModule;
   funnelsModule: FunnelsModule;
+  /** For `/request-screenshot`. */
+  heatmapsModule: HeatmapsModule;
   /** For its tracker-facing lookup — anonymous, heavily cached, not `WebsiteQuery`. */
   websitesModule: WebsitesModule;
   logger?: Logger;
 }): IngestModule {
-  const sinks = new ModuleIngestSinks(
-    deps.analyticsModule.ingest,
-    deps.automationsModule.triggers,
-    deps.automationsModule.visitorProfiles,
-    deps.recordingsModule.ingest,
-    deps.heatmapsModule.ingest,
-  );
-  // The queue enqueues; the worker applies. Splitting them is what puts a committed row
+  const logger = deps.logger ?? baseLog;
+
+  // The buffer enqueues; the worker applies. Splitting them is what puts a committed row
   // between the tracker request and the module writes, so a crash costs at most the
   // batches in flight rather than every in-memory buffer.
-  const queue = new IngestQueueService(postgresBatchQueue, deps.logger ?? baseLog);
-  const worker = new IngestWorker(
-    postgresBatchQueue,
-    sinks,
-    deps.logger ?? baseLog,
-  );
+  const buffer = new CollectBuffer(deps.registry, postgresBatchQueue, logger);
+  const worker = new BatchWorker(postgresBatchQueue, deps.registry, logger);
 
   return {
-    sinks,
+    queue: buffer,
     routes: createTrackerRoutes({
-      queue,
+      queue: buffer,
       automations: deps.automationsModule.trackerSettings,
       automationEvaluation: deps.automationsModule.evaluation,
       funnels: deps.funnelsModule.trackerConfig,
@@ -64,31 +59,24 @@ export function initIngestModule(deps: {
     }),
 
     start(cfg) {
-      queue.configure(cfg);
-      queue.start();
+      buffer.configure(cfg);
+      buffer.start();
       worker.start();
     },
 
-    /**
-     * Stop the timer, then drain.
-     *
-     * Both, in that order: `stop` only clears the interval, so without the explicit
-     * `flushNow` everything still buffered is lost — that is the durability trade this
-     * module makes, and shutdown is the one place it is recoverable.
-     *
-     * The engines are shut down after this returns, by their own modules. Reversing the
-     * two would discard whatever this flush just handed them.
-     */
     /**
      * Stop the timer, drain the buffers onto the queue, then drain the queue.
      *
      * All three, in that order. Stopping without `flushNow` loses whatever is still
      * buffered; enqueueing without draining leaves committed batches for the next boot to
      * pick up — survivable, but a clean shutdown should hand over an empty queue.
+     *
+     * The engines are shut down after this returns, by their own modules. Reversing the
+     * two would discard whatever this drain just handed them.
      */
     async stop() {
-      queue.stop();
-      await queue.flushNow();
+      buffer.stop();
+      await buffer.flushNow();
       await worker.stop();
       await worker.drainOnce();
     },

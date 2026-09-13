@@ -24,7 +24,7 @@ export class AnalyticsIngestService implements AnalyticsIngestWriter {
   ): Promise<number> {
     const rows = trackerRowsToAnalytics(events);
 
-    const { applied, rowCount } = await applyBatchOnce(batchId, "analytics", (tx) =>
+    const { applied, rowCount } = await applyBatchOnce(batchId, (tx) =>
       ingestAnalyticsBatch(tx, websiteId, rows),
     );
     // A repeat is normal under at-least-once delivery, not an error. Reporting 0 keeps the

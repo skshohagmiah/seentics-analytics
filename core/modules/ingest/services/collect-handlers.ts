@@ -111,7 +111,7 @@ export function handleEvents(ctx: CollectHandlerContext): TrackerEvent[] {
   );
   if (!filtered.length) return page;
   const forDb = withIngestMeta(sortByTs(filtered), ctx.ingestMeta);
-  ctx.queue.enqueueEvents(ctx.website.id, forDb);
+  ctx.queue.enqueue('analytics', ctx.website.id, forDb);
   log.debug({ msg: "events_queued", website_id: ctx.website.id, n: forDb.length });
   // Returned so `handleVisitorProfile` does not parse the same body a second time. The
   // unfiltered list, because the profile counts pageviews and reads `identify` traits —
@@ -173,7 +173,7 @@ export function handleVisitorProfile(ctx: CollectHandlerContext, parsed: Tracker
   }
 
   const meta = ctx.ingestMeta;
-  ctx.queue.enqueueProfiles([
+  ctx.queue.enqueue('profiles', ctx.website.id, [
     {
       websiteId: ctx.website.id,
       anonymousId,
@@ -197,7 +197,7 @@ export function handleFunnels(ctx: CollectHandlerContext): void {
   const only = raw.filter((e) => TRACKER_FUNNEL_EVENT_TYPES.has(e.type) && e.sid);
   if (!only.length) return;
   const forDb = withIngestMeta(sortByTs(only), ctx.ingestMeta);
-  ctx.queue.enqueueFunnels(ctx.website.id, forDb);
+  ctx.queue.enqueue('funnels', ctx.website.id, forDb);
   log.debug({ msg: "funnel_events_queued", website_id: ctx.website.id, n: forDb.length });
 }
 
@@ -232,7 +232,7 @@ export function handleAutomations(ctx: CollectHandlerContext): void {
     });
   }
   if (!rows.length) return;
-  ctx.queue.enqueueAutomations(rows);
+  ctx.queue.enqueue('automations', ctx.website.id, rows);
   log.debug({ msg: "automation_triggers_queued", website_id: ctx.website.id, n: rows.length });
 }
 
@@ -249,7 +249,7 @@ export function handleRecordings(ctx: CollectHandlerContext): void {
     })),
   );
   if (!prepared.length) return;
-  ctx.queue.enqueueRecordings(prepared);
+  ctx.queue.enqueue('recordings', ctx.website.id, prepared);
   log.debug({ msg: "recordings_queued", website_id: ctx.website.id, n: prepared.length });
 }
 
@@ -279,6 +279,6 @@ export function handleHeatmaps(ctx: CollectHandlerContext): void {
     heatmapLayoutEnabled: ctx.website.heatmap_layout_enabled,
   }));
 
-  ctx.queue.enqueueHeatmaps(sortByTs(withContext));
+  ctx.queue.enqueue('heatmaps', ctx.website.id, sortByTs(withContext));
   log.debug({ msg: "heatmaps_queued", website_id: ctx.website.id, n: withContext.length });
 }

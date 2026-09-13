@@ -104,14 +104,22 @@ export function bootstrap(cfg: AppConfig, logger: Logger = log): Application {
   const automationsModule = initAutomationsModule({ websitesModule });
   const aiModule = initAiModule({ websitesModule });
 
+  // The lane registry is the composition: each module contributes the ingest for the data
+  // it owns, and ingest supplies only the generic machinery. Adding a feature's ingest is
+  // one lane here and one file in that module.
   const ingestModule = initIngestModule({
-    analyticsModule,
+    registry: {
+      analytics: analyticsModule.lanes.analytics,
+      funnels: analyticsModule.lanes.funnels,
+      automations: automationsModule.lanes.automations,
+      profiles: automationsModule.lanes.profiles,
+      recordings: recordingsModule.lane,
+      heatmaps: heatmapsModule.lane,
+    },
     automationsModule,
-    recordingsModule,
-    heatmapsModule,
     funnelsModule,
+    heatmapsModule,
     websitesModule,
-    logger,
   });
 
   // ─── Retention ───────────────────────────────────────────────────────────
@@ -181,9 +189,10 @@ export function bootstrap(cfg: AppConfig, logger: Logger = log): Application {
       heatmaps: heatmapsModule.routes,
       automations: automationsModule.routes,
       ai: aiModule.routes,
-      // Reuses ingest's sinks: the internal collectors write to the same four targets.
+      // Reuses ingest's buffer: the internal collectors carry the same data over a
+      // server-to-server API, so they get the same batching and exactly-once handling.
       internal: createInternalRoutes({
-        sinks: ingestModule.sinks,
+        queue: ingestModule.queue,
         retention,
         trackerWebsites: websitesModule.trackerWebsites,
         usage,

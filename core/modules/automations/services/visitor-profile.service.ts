@@ -18,7 +18,7 @@
  * has been through. The first version wrote one un-awaited upsert per `/collect`, which
  * made the profile the only per-request database write on a path whose entire design is
  * that it never makes one. It now takes the same route as every other category: buffered
- * by `IngestQueueService`, committed to `ingest_batches`, applied by `IngestWorker`.
+ * by `CollectBuffer`, committed to `ingest_batches`, applied by `BatchWorker`.
  */
 
 import { applyBatchOnceSql } from "../../../platform/idempotency";
@@ -42,13 +42,13 @@ export class VisitorProfileService implements VisitorProfileWriter {
    * batch completed.
    */
   async writeBatch(batchId: string, rows: readonly VisitorProfileWrite[]): Promise<number> {
-    // Defensive rather than load-bearing — `IngestQueueService` coalesces before it
+    // Defensive rather than load-bearing — `CollectBuffer` coalesces before it
     // enqueues — but the statement below is an error, not a double count, if two rows in
     // one batch name the same visitor. Cheap enough to guarantee here too.
     const unique = coalesceProfiles(rows);
     if (unique.length === 0) return 0;
 
-    const { applied, rowCount } = await applyBatchOnceSql(batchId, "profiles", (tx) =>
+    const { applied, rowCount } = await applyBatchOnceSql(batchId, (tx) =>
       upsertVisitorProfilesBatch(tx, unique),
     );
     return applied ? rowCount : 0;

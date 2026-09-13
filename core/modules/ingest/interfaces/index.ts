@@ -1,19 +1,20 @@
 /**
  * Public contracts for the ingest module.
  *
- * `IngestSinks` is the notable one: ingest depends on four other modules, and
- * declaring those dependencies as a port is what keeps the dependency arrow
- * pointing outward instead of ingest importing everyone's internals.
+ * `LaneSpec` is the notable one: each feature declares its own ingest — partitioning,
+ * back-pressure, write — and ingest supplies only the machinery that is genuinely generic
+ * (buffering, the durable queue, claim, retry, park).
  *
  * `TrackerWebsites` used to be declared here. It moved to `modules/websites` once the
  * implementation did — three modules consume it, so the provider owns the contract.
  */
 export type {
-  BatchQueueStore,
-  IngestCategory,
+  BatchQueue,
   IngestFlusher,
+  IngestLane,
   IngestQueue,
-  IngestSinks,
+  LaneRegistry,
+  LaneSpec,
   QueuedBatch,
 } from "./ingest.interface";
 

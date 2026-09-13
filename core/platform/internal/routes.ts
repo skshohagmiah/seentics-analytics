@@ -8,11 +8,10 @@ import type {
 } from "../lib/api-types";
 import { buildAnalyticsIngestMeta } from "../lib/analytics-ingest-meta";
 import { clientIpForIngest } from "../lib/client-ip";
-import { batchIdFor } from "../../platform/idempotency/batch-id";
 import { isGlobalApiKeyValid } from "../lib/global-key";
 import type { AnalyticsIngestEvent, TrackerEvent } from "../lib/types";
 import type { RetentionRunner } from "../retention";
-import type { IngestSinks } from "../../modules/ingest/interfaces";
+import type { IngestQueue } from "../../modules/ingest/interfaces";
 import type { TrackerWebsites } from "../../modules/websites/interfaces";
 import type { UserUsageService } from "../usage";
 import { parseJson } from "../../platform/validation";
@@ -32,19 +31,19 @@ function requireGlobalKey(c: Pick<Context, "req">) {
  * A factory rather than a module-level router: it previously reached into three other
  * modules directly — the analytics batch writer plus the recordings and heatmap engine
  * singletons — to accept server-to-server event pushes. Those are the same four write
- * targets ingest already models as `IngestSinks`, so it takes that port instead of
+ * buffer ingest already owns, so it takes that port instead of
  * duplicating the wiring, and the retention sweep arrives injected.
  */
 export function createInternalRoutes(deps: {
   /** The same write targets ingest flushes to; reused rather than re-derived. */
-  sinks: IngestSinks;
+  queue: IngestQueue;
   retention: RetentionRunner;
   /** Tracker-shaped website lookup for the `/website-owner` collector. */
   trackerWebsites: TrackerWebsites;
   /** Per-user usage, assembled from each module's own count. */
   usage: UserUsageService;
 }) {
-  const { sinks, retention } = deps;
+  const { queue, retention } = deps;
   const internalRoutes = new Hono();
 
   internalRoutes.use("*", async (c, next) => {
@@ -114,7 +113,7 @@ internalRoutes.post("/collect/analytics", async (c) => {
       ingestMeta,
     };
   });
-  await sinks.writeAnalyticsBatch(batchIdFor(events), website.id, events);
+  queue.enqueue("analytics", website.id, events);
   return c.body(null, 204);
 });
 
@@ -133,10 +132,9 @@ internalRoutes.post("/collect/replay-events", async (c) => {
     headers: c.req.raw.headers,
   });
   const enriched = events.map((e) => ({ ...(e as Record<string, unknown>), ingestMeta }));
-  await sinks.processRecordings(
-    batchIdFor(enriched),
-    enriched as Parameters<IngestSinks["processRecordings"]>[1],
-  );
+  // Partitioned by session, which each row carries — the website id is only a fallback
+  // for lanes that key on it, and these rows do not.
+  queue.enqueue("recordings", "", enriched);
   return c.json({ ok: true });
 });
 
@@ -147,10 +145,7 @@ internalRoutes.post("/collect/heatmap-events", async (c) => {
   const body = parsed.data as unknown as InternalCollectHeatmapEventsBody;
   const events = (body as { events?: unknown[] }).events;
   if (!events?.length) return c.json({ error: "events required" }, 400);
-  await sinks.processHeatmaps(
-    batchIdFor(events),
-    events as Parameters<IngestSinks["processHeatmaps"]>[1],
-  );
+  queue.enqueue("heatmaps", "", events);
   return c.json({ ok: true });
 });
 

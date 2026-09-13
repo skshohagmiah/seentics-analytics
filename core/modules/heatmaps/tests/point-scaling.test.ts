@@ -3,7 +3,7 @@ import type { HeatmapIngestEvent } from "../../../platform/lib/types";
 import { eventsToPoints } from "../services/point-mapping";
 
 // A plain static import, and no `DATABASE_URL` to fake. That is the point of the split:
-// this used to reach these functions through `heatmap-engine.service`, which pulls in
+// this used to reach these functions through `heatmap-ingest.service`, which pulls in
 // `db` and throws while loading, so the test needed a dynamic import and a stub
 // environment to test arithmetic on a plain object.
 

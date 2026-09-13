@@ -1,3 +1,4 @@
+import type { LaneSpec } from "../../ingest/interfaces";
 import type { AuthedRouter } from "../../../platform/http/router";
 import type { UsageCounter } from "../../../platform/usage";
 import type { RetentionPurge } from "../../../platform/retention";
@@ -10,6 +11,9 @@ import type {
 
 /** Everything the automations module offers. */
 export interface AutomationsModule {
+  /** This module's ingest lanes — trigger rows and visitor profiles. */
+  lanes: { automations: LaneSpec; profiles: LaneSpec };
+
   /** Active automations for the tracker's `/init`. One indexed read per session. */
   trackerSettings: AutomationTrackerSettings;
 

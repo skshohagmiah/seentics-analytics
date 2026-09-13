@@ -62,8 +62,8 @@ const removedSpools: string[] = [];
  */
 let onWarmChunks: (() => void) | null = null;
 
-mock.module("../services/recording-engine.service", () => ({
-  getReplayEngine: () => ({
+mock.module("../services/recording-ingest.service", () => ({
+  recordingIngestService: () => ({
     warmChunks: () => {
       onWarmChunks?.();
       return warmTail;
@@ -75,11 +75,10 @@ mock.module("../services/recording-engine.service", () => ({
     shutdown: async () => {},
     flushNow: async () => {},
   }),
-  ReplayEngine: class {},
+  RecordingIngestService: class {},
   // Not driven here, but a global stub has to list every runtime export or an
   // unrelated file fails on the missing name — see `app/tests/mock-completeness.test.ts`.
-  initReplayEngine: () => ({}),
-  stopReplayEngine: async () => {},
+  stopRecordingIngestService: async () => {},
 }));
 
 const { getReplaySessionDetail } = await import("../services/session-detail.service");

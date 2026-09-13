@@ -1,5 +1,5 @@
 import { env } from "../../../config";
-import { getReplayEngine } from "./recording-engine.service";
+import { recordingIngestService } from "./recording-ingest.service";
 import { getSessionMeta } from "../repositories/recording.repository";
 import { presignGet, locateBundle, getJsonGzip, listSessionReplayChunks } from "../../../platform/lib/s3";
 import { compareReplayEnvelopeEvents } from "./event-order";
@@ -104,7 +104,7 @@ export async function getReplaySessionDetail(
   sessionId: string,
 ): Promise<ReplaySessionDetail> {
   const sid = sessionId.trim();
-  const engine = getReplayEngine();
+  const engine = recordingIngestService();
   const cfg = env();
 
   const metaRow = await getSessionMeta(websiteId, sid);

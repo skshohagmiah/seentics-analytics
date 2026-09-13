@@ -1,3 +1,4 @@
+import type { LaneSpec } from "../../ingest/interfaces";
 import type { AuthedRouter } from "../../../platform/http/router";
 import type { UsageCounter } from "../../../platform/usage";
 import type { ModuleLifecycle } from "../../../app/module";
@@ -6,6 +7,9 @@ import type { RecordingIngest, RecordingRawReads } from "./index";
 
 /** Everything the recordings module offers. */
 export interface RecordingsModule extends ModuleLifecycle {
+  /** This module's ingest lane. Partitioned by session — see `recordingsLane`. */
+  lane: LaneSpec;
+
   /**
    * Where ingest hands raw tracker events, resolved on first use.
    *

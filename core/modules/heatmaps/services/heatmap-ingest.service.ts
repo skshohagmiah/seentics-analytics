@@ -19,14 +19,14 @@ const storageConcurrency = 3;
  *
  * **Every write this makes is complete before `processEvents` resolves.** That is the
  * whole contract, and it used to be the opposite: points went into an in-memory array
- * drained by a 400ms timer, so `processEvents` returned — and `IngestWorker` set
+ * drained by a 400ms timer, so `processEvents` returned — and `BatchWorker` set
  * `completed_at` on the durable batch — while the data was still only in RAM. Three
  * things then lost it silently. A restart inside the timer window dropped the buffer, and
  * the batch was already completed so it was never redelivered. A full buffer dropped rows
  * with a `warn`. A failed flush logged and returned, requeueing nothing. In all three the
  * queue row said applied and the points did not exist.
  *
- * So there is no buffer here now. Batching already happened upstream — `IngestQueueService`
+ * So there is no buffer here now. Batching already happened upstream — `CollectBuffer`
  * accumulates across requests and `ingest_batches` holds the result — and a second layer of
  * it here bought nothing except a window in which acknowledged data was not yet durable. A
  * throw propagates to the worker, which retries the batch and parks it after
@@ -36,13 +36,13 @@ const storageConcurrency = 3;
  * the cheap half, so a retry driven by a failed upload skips them via the batch marker
  * instead of redoing them.
  */
-export class HeatmapEngine implements HeatmapIngest {
+export class HeatmapIngestService implements HeatmapIngest {
   private readonly snapshots: SnapshotIngestService;
 
   /**
    * Named rather than positional, so a caller supplies only what it has.
    *
-   * Both are optional and unrelated, which positionally meant `new HeatmapEngine(null,
+   * Both are optional and unrelated, which positionally meant `new HeatmapIngestService(null,
    * snapshots)` — a `null` that says nothing about what it stands for, and that read as a
    * leftover once the event bus this class used to take was removed.
    */
@@ -56,7 +56,7 @@ export class HeatmapEngine implements HeatmapIngest {
     websites?: TrackerWebsites | null;
     /**
      * Where page backgrounds go. Optional because the two real callers
-     * (`getHeatmapEngine`, `initHeatmapEngine`) have no reason to build one — but a test
+     * (`heatmapIngestService`, `createHeatmapIngestService`) have no reason to build one — but a test
      * does, and constructing the default reads `env().s3.bucket`, which means a database
      * URL and a bucket just to exercise a write.
      */
@@ -103,7 +103,7 @@ export class HeatmapEngine implements HeatmapIngest {
    */
   private async writePoints(batchId: string, rows: HeatmapPointRow[]): Promise<void> {
     if (rows.length === 0) return;
-    const { applied } = await applyBatchOnceSql(batchId, "heatmaps", (tx) =>
+    const { applied } = await applyBatchOnceSql(batchId, (tx) =>
       batchUpsertPoints(tx, rows),
     );
     if (!applied) {
@@ -158,26 +158,27 @@ async function mapWithConcurrency<T>(
   await Promise.all(workers);
 }
 
-let _engine: HeatmapEngine | null = null;
+let _engine: HeatmapIngestService | null = null;
 
 /**
- * The process-wide engine.
+ * The process-wide service.
  *
- * Still a singleton because its callers — the ingest sinks and the shutdown hook — are
- * module-level and have nothing to inject through. Creates a bus-less engine if nothing
- * initialized one first, so ingest keeps working whether or not events are wired.
+ * Still an accessor rather than an injected dependency because its callers — this
+ * module's own lane and its shutdown hook — are module-level and have nothing to inject
+ * through. Creates a bus-less instance if nothing initialized one first, so ingest keeps
+ * working whether or not events are wired.
  */
-export function getHeatmapEngine(): HeatmapEngine {
-  if (!_engine) _engine = new HeatmapEngine();
+export function heatmapIngestService(): HeatmapIngestService {
+  if (!_engine) _engine = new HeatmapIngestService();
   return _engine;
 }
 
 /**
- * Create the engine with the website lookup its SSRF guard needs. Called by
+ * Create it with the website lookup its SSRF guard needs. Called by
  * `initHeatmapsModule().start` before anything can ingest; returns the same instance
- * `getHeatmapEngine()` will hand out.
+ * `heatmapIngestService()` will hand out.
  */
-export function initHeatmapEngine(websites: TrackerWebsites): HeatmapEngine {
-  _engine = new HeatmapEngine({ websites });
+export function createHeatmapIngestService(websites: TrackerWebsites): HeatmapIngestService {
+  _engine = new HeatmapIngestService({ websites });
   return _engine;
 }

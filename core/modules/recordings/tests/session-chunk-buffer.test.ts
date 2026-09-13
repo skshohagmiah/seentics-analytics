@@ -2,13 +2,13 @@ import { describe, it, expect, beforeEach } from "bun:test";
 // Registers the shared infrastructure stubs. Must come before the module under test.
 import { warnings, resetStubs } from "./support/stubs";
 
-const { ReplaySpool } = await import("../services/spool");
+const { SessionChunkBuffer } = await import("../services/session-chunk-buffer");
 
 type Flush = { websiteId: string; sessionId: string; sequence: number; count: number };
 
 function makeSpool() {
   const flushes: Flush[] = [];
-  const spool = new ReplaySpool({
+  const spool = new SessionChunkBuffer({
     // Floored to 5s internally; long enough that no timer fires during a test.
     chunkFlushMs: 60_000,
     getInitialSequence: async () => 0,
@@ -24,7 +24,7 @@ function envelope(bytes: number, ts = 1): Record<string, unknown> {
   return { type: "rrweb", ts, data: { timestamp: ts, blob: "x".repeat(Math.max(1, bytes)) } };
 }
 
-describe("ReplaySpool", () => {
+describe("SessionChunkBuffer", () => {
   beforeEach(() => {
     resetStubs();
   });
@@ -198,7 +198,7 @@ describe("ReplaySpool", () => {
   describe("failed flush", () => {
     function failingSpool(failures: number) {
       let attempts = 0;
-      const spool = new ReplaySpool({
+      const spool = new SessionChunkBuffer({
         chunkFlushMs: 60_000,
         getInitialSequence: async () => 0,
         onChunkFlush: async () => {
@@ -240,7 +240,7 @@ describe("ReplaySpool", () => {
     it("succeeds on a later attempt without losing the original events", async () => {
       const flushes: Flush[] = [];
       let attempts = 0;
-      const spool = new ReplaySpool({
+      const spool = new SessionChunkBuffer({
         chunkFlushMs: 60_000,
         getInitialSequence: async () => 0,
         onChunkFlush: async (websiteId, sessionId, sequence, events) => {

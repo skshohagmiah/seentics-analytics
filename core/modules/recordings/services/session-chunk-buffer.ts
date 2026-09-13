@@ -88,7 +88,7 @@ function sortEvents(events: Record<string, unknown>[]): void {
  * In-memory tail buffer: flush every `chunkFlushMs` into an immutable S3 chunk,
  * then clear the buffer (no read-merge bundle).
  */
-export class ReplaySpool {
+export class SessionChunkBuffer {
   private sessions = new Map<string, SessionState>();
   private chunkFlushMs: number;
   private idlePurgeMs: number;

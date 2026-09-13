@@ -34,7 +34,7 @@ const MIN_HTML_BYTES = 100;
  * comes from: the tracker's own html2canvas JPEG, its DOM snapshot, and the higher-quality
  * Playwright re-capture triggered off the back of them.
  *
- * Split from `HeatmapEngine` because the two halves share nothing but a bucket name. The
+ * Split from `HeatmapIngestService` because the two halves share nothing but a bucket name. The
  * engine buffers points and drains them on a timer against Postgres; this talks to object
  * storage and the layout tables, one item at a time, and is where every deduplication
  * decision lives. Keeping them together meant the engine could not be exercised without
@@ -51,7 +51,7 @@ export class SnapshotIngestService {
   constructor(
     private readonly bucket: string,
     /**
-     * `null` on a bus-less engine — see `getHeatmapEngine`. Publishing is best-effort
+     * `null` on a bus-less engine — see `heatmapIngestService`. Publishing is best-effort
      * there rather than a failure.
      */
     /**

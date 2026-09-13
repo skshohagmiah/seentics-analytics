@@ -4,16 +4,17 @@ import type { AutomationTriggerQueued, TrackerEvent } from "../../../platform/li
 import type { HeatmapTrackerEvent } from "../../heatmaps/interfaces";
 import type { VisitorProfileWrite } from "../../automations/interfaces";
 import type {
-  BatchQueueStore,
-  IngestCategory,
-  IngestSinks,
+  BatchQueue,
+  IngestLane,
+  LaneRegistry,
+  LaneSpec,
   QueuedBatch,
 } from "../interfaces";
-import { IngestWorker } from "../services/ingest-worker.service";
+import { BatchWorker } from "../services/batch-worker.service";
 
 /**
  * The worker's job is claim → apply → complete, or claim → fail → park. No database here:
- * `BatchQueueStore` and `IngestSinks` are both interfaces, which is why that logic is
+ * `BatchQueue` and `LaneRegistry` are both interfaces, which is why that logic is
  * testable at all.
  */
 
@@ -35,15 +36,15 @@ const silentLogger: Logger = {
  * its whole partition key behind it — until something gives it back. Modelling it is what
  * lets the shutdown path be tested at all.
  */
-class FakeQueue implements BatchQueueStore {
+class FakeQueue implements BatchQueue {
   rows: (QueuedBatch & { completed: boolean; claimed: boolean; lastError?: string })[] = [];
 
-  seed(batch: Partial<QueuedBatch> & { category: IngestCategory }): QueuedBatch {
+  seed(batch: Partial<QueuedBatch> & { lane: IngestLane }): QueuedBatch {
     const row = {
       batchId: batch.batchId ?? `batch_${this.rows.length + 1}`,
-      category: batch.category,
+      lane: batch.lane,
       partitionKey: batch.partitionKey ?? "site_a",
-      payload: batch.payload ?? {},
+      payload: batch.payload ?? { rows: [] },
       rowCount: batch.rowCount ?? 1,
       attempts: batch.attempts ?? 0,
       completed: false,
@@ -61,7 +62,7 @@ class FakeQueue implements BatchQueueStore {
   claimCalls = 0;
 
   async claimPending(
-    category: IngestCategory,
+    lane: IngestLane,
     limit: number,
     maxAttempts: number,
   ): Promise<QueuedBatch[]> {
@@ -75,7 +76,7 @@ class FakeQueue implements BatchQueueStore {
     const out: QueuedBatch[] = [];
     for (const r of this.rows) {
       if (out.length >= limit) break;
-      if (r.category !== category || r.completed || r.claimed) continue;
+      if (r.lane !== lane || r.completed || r.claimed) continue;
       if (r.attempts >= maxAttempts) continue;
       if (takenKeys.has(r.partitionKey)) continue;
       takenKeys.add(r.partitionKey);
@@ -112,9 +113,9 @@ class FakeQueue implements BatchQueueStore {
     }
   }
 
-  async countPending(category: IngestCategory, maxAttempts: number): Promise<number> {
+  async countPending(lane: IngestLane, maxAttempts: number): Promise<number> {
     return this.rows.filter(
-      (r) => r.category === category && !r.completed && r.attempts < maxAttempts,
+      (r) => r.lane === lane && !r.completed && r.attempts < maxAttempts,
     ).length;
   }
 
@@ -129,55 +130,58 @@ class FakeQueue implements BatchQueueStore {
   }
 }
 
-/** Records what each sink received, and can be made to fail per category. */
-class FakeSinks implements IngestSinks {
+/**
+ * Records what each lane received, and can be made to fail per lane.
+ *
+ * `apply` completes the batch on the way through, which is what `applyBatchOnce` does in
+ * production: the completion flip happens inside the write's own transaction, not in a
+ * separate call the worker makes afterwards.
+ */
+class FakeRegistry {
   analytics: { batchId: string; websiteId: string; count: number }[] = [];
-  automations: AutomationTriggerQueued[][] = [];
-  recordings: TrackerEvent[][] = [];
-  heatmaps: HeatmapTrackerEvent[][] = [];
-  profiles: VisitorProfileWrite[][] = [];
+  automations: unknown[][] = [];
+  recordings: unknown[][] = [];
+  heatmaps: unknown[][] = [];
+  profiles: unknown[][] = [];
 
-  failCategories = new Set<IngestCategory>();
+  failLanes = new Set<IngestLane>();
   /** Rows the analytics writer claims to have inserted; 0 models an already-applied batch. */
   insertedOverride: number | null = null;
   /** Runs before each analytics write, so a test can interrupt a drain mid-pass. */
   onAnalyticsWrite: (() => void) | null = null;
 
-  async writeAnalyticsBatch(
-    batchId: string,
-    websiteId: string,
-    events: readonly TrackerEvent[],
-  ): Promise<number> {
-    this.onAnalyticsWrite?.();
-    this.analytics.push({ batchId, websiteId, count: events.length });
-    if (this.failCategories.has("analytics") || this.failCategories.has("funnels")) {
-      throw new Error("analytics write failed");
-    }
-    return this.insertedOverride ?? events.length;
+  constructor(private readonly queue: FakeQueue) {}
+
+  private lane(name: IngestLane, record: (batchId: string, key: string, rows: never[]) => number | void): LaneSpec {
+    return {
+      partitionOf: (_row, websiteId) => websiteId,
+      threshold: () => 50_000,
+      apply: async (batchId, partitionKey, rows) => {
+        const out = record(batchId, partitionKey, rows);
+        if (this.failLanes.has(name)) throw new Error(`${name} write failed`);
+        await this.queue.markCompleted(batchId);
+        return out ?? undefined;
+      },
+    };
   }
 
-  async writeAutomationTriggers(_batchId: string, rows: AutomationTriggerQueued[]): Promise<void> {
-    this.automations.push(rows);
-    if (this.failCategories.has("automations")) throw new Error("automations write failed");
-  }
-
-  async processRecordings(_batchId: string, events: TrackerEvent[]): Promise<void> {
-    this.recordings.push(events);
-    if (this.failCategories.has("recordings")) throw new Error("replay engine down");
-  }
-
-  async processHeatmaps(_batchId: string, events: readonly HeatmapTrackerEvent[]): Promise<void> {
-    this.heatmaps.push([...events]);
-    if (this.failCategories.has("heatmaps")) throw new Error("heatmap engine down");
-  }
-
-  async writeVisitorProfiles(
-    _batchId: string,
-    rows: readonly VisitorProfileWrite[],
-  ): Promise<number> {
-    this.profiles.push([...rows]);
-    if (this.failCategories.has("profiles")) throw new Error("profile write failed");
-    return rows.length;
+  build(): LaneRegistry {
+    return {
+      analytics: this.lane("analytics", (batchId, websiteId, rows) => {
+        this.onAnalyticsWrite?.();
+        this.analytics.push({ batchId, websiteId, count: rows.length });
+        return this.insertedOverride ?? rows.length;
+      }),
+      funnels: this.lane("funnels", (batchId, websiteId, rows) => {
+        this.onAnalyticsWrite?.();
+        this.analytics.push({ batchId, websiteId, count: rows.length });
+        return this.insertedOverride ?? rows.length;
+      }),
+      automations: this.lane("automations", (_id, _key, rows) => void this.automations.push([...rows])),
+      recordings: this.lane("recordings", (_id, _key, rows) => void this.recordings.push([...rows])),
+      heatmaps: this.lane("heatmaps", (_id, _key, rows) => void this.heatmaps.push([...rows])),
+      profiles: this.lane("profiles", (_id, _key, rows) => void this.profiles.push([...rows])),
+    };
   }
 }
 
@@ -191,23 +195,23 @@ function events(n: number): TrackerEvent[] {
   }));
 }
 
-describe("IngestWorker", () => {
+describe("BatchWorker", () => {
   let queue: FakeQueue;
-  let sinks: FakeSinks;
-  let worker: IngestWorker;
+  let sinks: FakeRegistry;
+  let worker: BatchWorker;
 
   beforeEach(() => {
     queue = new FakeQueue();
-    sinks = new FakeSinks();
-    worker = new IngestWorker(queue, sinks, silentLogger, { maxAttempts: 3 });
+    sinks = new FakeRegistry(queue);
+    worker = new BatchWorker(queue, sinks.build(), silentLogger, { maxAttempts: 3 });
   });
 
   describe("dispatch", () => {
     it("routes an analytics batch to the analytics writer", async () => {
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         batchId: "b1",
-        payload: { websiteId: "site_a", events: events(3) },
+        payload: { rows: events(3) },
         rowCount: 3,
       });
 
@@ -219,8 +223,8 @@ describe("IngestWorker", () => {
     // Funnels share the analytics table and writer; only the queue category differs.
     it("routes a funnels batch to the same writer", async () => {
       queue.seed({
-        category: "funnels",
-        payload: { websiteId: "site_a", events: events(2) },
+        lane: "funnels",
+        payload: { rows: events(2) },
         rowCount: 2,
       });
 
@@ -230,9 +234,9 @@ describe("IngestWorker", () => {
     });
 
     it("routes each other category to its own sink", async () => {
-      queue.seed({ category: "automations", payload: { rows: [{ a: 1 }] } });
-      queue.seed({ category: "recordings", payload: { events: [{ sid: "s1" }] } });
-      queue.seed({ category: "heatmaps", payload: { events: [{ type: "heatmap_click" }] } });
+      queue.seed({ lane: "automations", payload: { rows: [{ a: 1 }] } });
+      queue.seed({ lane: "recordings", payload: { rows: [{ sid: "s1" }] } });
+      queue.seed({ lane: "heatmaps", payload: { rows: [{ type: "heatmap_click" }] } });
 
       await worker.drainOnce();
 
@@ -247,9 +251,9 @@ describe("IngestWorker", () => {
      */
     it("passes the batch id through to the sink", async () => {
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         batchId: "stable_id",
-        payload: { websiteId: "site_a", events: events(1) },
+        payload: { rows: events(1) },
       });
 
       await worker.drainOnce();
@@ -260,7 +264,7 @@ describe("IngestWorker", () => {
 
   describe("completion", () => {
     it("marks an applied batch completed so it is not claimed again", async () => {
-      queue.seed({ category: "analytics", payload: { websiteId: "site_a", events: events(1) } });
+      queue.seed({ lane: "analytics", payload: { rows: events(1) } });
 
       await worker.drainOnce();
       await worker.drainOnce();
@@ -270,8 +274,8 @@ describe("IngestWorker", () => {
     });
 
     it("reports how many batches it applied", async () => {
-      queue.seed({ category: "analytics", payload: { websiteId: "site_a", events: events(1) } });
-      queue.seed({ category: "heatmaps", payload: { events: [] } });
+      queue.seed({ lane: "analytics", payload: { rows: events(1) } });
+      queue.seed({ lane: "heatmaps", payload: { rows: [] } });
 
       expect(await worker.drainOnce()).toBe(2);
     });
@@ -279,11 +283,11 @@ describe("IngestWorker", () => {
 
   describe("failure handling", () => {
     it("leaves a failed batch pending and counts the attempt", async () => {
-      sinks.failCategories.add("analytics");
+      sinks.failLanes.add("analytics");
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         batchId: "b1",
-        payload: { websiteId: "site_a", events: events(1) },
+        payload: { rows: events(1) },
       });
 
       await worker.drainOnce();
@@ -295,11 +299,11 @@ describe("IngestWorker", () => {
     });
 
     it("retries on the next pass and completes once the sink recovers", async () => {
-      sinks.failCategories.add("analytics");
-      queue.seed({ category: "analytics", payload: { websiteId: "site_a", events: events(1) } });
+      sinks.failLanes.add("analytics");
+      queue.seed({ lane: "analytics", payload: { rows: events(1) } });
 
       await worker.drainOnce();
-      sinks.failCategories.clear();
+      sinks.failLanes.clear();
       await worker.drainOnce();
 
       expect(sinks.analytics).toHaveLength(2);
@@ -312,8 +316,8 @@ describe("IngestWorker", () => {
      * replayed by resetting its attempt count.
      */
     it("parks a batch that exhausts its attempts instead of dropping it", async () => {
-      sinks.failCategories.add("analytics");
-      queue.seed({ category: "analytics", payload: { websiteId: "site_a", events: events(1) } });
+      sinks.failLanes.add("analytics");
+      queue.seed({ lane: "analytics", payload: { rows: events(1) } });
 
       await worker.drainOnce();
       await worker.drainOnce();
@@ -332,9 +336,9 @@ describe("IngestWorker", () => {
      * consumer used to delay analytics writes for every site through the shared flush.
      */
     it("keeps other categories draining while one fails", async () => {
-      sinks.failCategories.add("heatmaps");
-      queue.seed({ category: "heatmaps", payload: { events: [] } });
-      queue.seed({ category: "analytics", payload: { websiteId: "site_a", events: events(1) } });
+      sinks.failLanes.add("heatmaps");
+      queue.seed({ lane: "heatmaps", payload: { rows: [] } });
+      queue.seed({ lane: "analytics", payload: { rows: events(1) } });
 
       await worker.drainOnce();
 
@@ -347,8 +351,8 @@ describe("IngestWorker", () => {
   describe("applying analytics batches", () => {
     it("hands the sink the rows and completes the batch", async () => {
       queue.seed({
-        category: "analytics",
-        payload: { websiteId: "site_a", events: events(3) },
+        lane: "analytics",
+        payload: { rows: events(3) },
         rowCount: 3,
       });
 
@@ -362,14 +366,14 @@ describe("IngestWorker", () => {
       // Distinct partition keys, as `flushAnalytics` assigns them — a site's batches are
       // keyed on its own id, so two sites are never serialised against each other.
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         partitionKey: "site_a",
-        payload: { websiteId: "site_a", events: events(1) },
+        payload: { rows: events(1) },
       });
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         partitionKey: "site_b",
-        payload: { websiteId: "site_b", events: events(1) },
+        payload: { rows: events(1) },
       });
 
       await worker.drainOnce();
@@ -387,8 +391,8 @@ describe("IngestWorker", () => {
     it("takes at most one batch per partition key", async () => {
       // Two batches for one replay session. Applying them together assigns both the same
       // chunk sequence, and the second overwrites the first in object storage.
-      queue.seed({ category: "recordings", partitionKey: "sess_1", payload: { events: events(1) } });
-      queue.seed({ category: "recordings", partitionKey: "sess_1", payload: { events: events(1) } });
+      queue.seed({ lane: "recordings", partitionKey: "sess_1", payload: { rows: events(1) } });
+      queue.seed({ lane: "recordings", partitionKey: "sess_1", payload: { rows: events(1) } });
 
       await worker.drainOnce();
 
@@ -396,8 +400,8 @@ describe("IngestWorker", () => {
     });
 
     it("takes batches for different partition keys in the same pass", async () => {
-      queue.seed({ category: "recordings", partitionKey: "sess_1", payload: { events: events(1) } });
-      queue.seed({ category: "recordings", partitionKey: "sess_2", payload: { events: events(1) } });
+      queue.seed({ lane: "recordings", partitionKey: "sess_1", payload: { rows: events(1) } });
+      queue.seed({ lane: "recordings", partitionKey: "sess_2", payload: { rows: events(1) } });
 
       await worker.drainOnce();
 
@@ -406,16 +410,16 @@ describe("IngestWorker", () => {
 
     it("hands back claims a shutdown did not get to", async () => {
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         batchId: "first",
         partitionKey: "site_a",
-        payload: { websiteId: "site_a", events: events(1) },
+        payload: { rows: events(1) },
       });
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         batchId: "second",
         partitionKey: "site_b",
-        payload: { websiteId: "site_b", events: events(1) },
+        payload: { rows: events(1) },
       });
 
       // Not awaited: `stop` waits for the drain it is interrupting, so awaiting it from
@@ -437,9 +441,9 @@ describe("IngestWorker", () => {
 
     it("releases nothing when the pass ran to the end", async () => {
       queue.seed({
-        category: "analytics",
+        lane: "analytics",
         partitionKey: "site_a",
-        payload: { websiteId: "site_a", events: events(1) },
+        payload: { rows: events(1) },
       });
 
       await worker.drainOnce();
@@ -470,7 +474,7 @@ describe("IngestWorker", () => {
   describe("claim failure", () => {
     it("does not treat a claim failure as an applied batch", async () => {
       queue.claimError = new Error('relation "ingest_batches" does not exist');
-      queue.seed({ category: "analytics", payload: { websiteId: "site_a", events: events(1) } });
+      queue.seed({ lane: "analytics", payload: { rows: events(1) } });
 
       expect(await worker.drainOnce()).toBe(0);
       expect(sinks.analytics).toEqual([]);
@@ -489,7 +493,7 @@ describe("IngestWorker", () => {
           return capturing;
         },
       };
-      const noisy = new IngestWorker(queue, sinks, capturing, { maxAttempts: 3 });
+      const noisy = new BatchWorker(queue, sinks.build(), capturing, { maxAttempts: 3 });
       queue.claimError = new Error("connection refused");
 
       await noisy.drainOnce();
@@ -502,8 +506,8 @@ describe("IngestWorker", () => {
     it("leaves the batch pending, with no attempt charged against it", async () => {
       queue.claimError = new Error("connection refused");
       const seeded = queue.seed({
-        category: "analytics",
-        payload: { websiteId: "site_a", events: events(1) },
+        lane: "analytics",
+        payload: { rows: events(1) },
       });
 
       await worker.drainOnce();
@@ -515,7 +519,7 @@ describe("IngestWorker", () => {
 
     it("resumes once the database comes back", async () => {
       queue.claimError = new Error("connection refused");
-      queue.seed({ category: "analytics", payload: { websiteId: "site_a", events: events(1) } });
+      queue.seed({ lane: "analytics", payload: { rows: events(1) } });
 
       await worker.drainOnce();
       queue.claimError = null;

@@ -133,7 +133,7 @@ describe("module boundaries", () => {
    */
   it("keeps single-module types out of platform/lib/types.ts", () => {
     /**
-     * Moves blocked on concurrent work in `heatmap-engine.service.ts`, which is where
+     * Moves blocked on concurrent work in `heatmap-ingest.service.ts`, which is where
      * both are consumed. They belong in `modules/heatmaps/interfaces`; this list exists
      * so the rule can be enforced now rather than deferred with it.
      */

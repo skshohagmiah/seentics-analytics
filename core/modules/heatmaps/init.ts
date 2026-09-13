@@ -1,3 +1,4 @@
+import { heatmapsLane } from "./ingest-lane";
 import type { AnalyticsModule } from "../analytics/interfaces";
 import type { WebsitesModule } from "../websites/interfaces";
 import type { HeatmapsModule } from "./interfaces";
@@ -5,7 +6,7 @@ import { HeatmapUsageCounter } from "./services/usage-count.service";
 import { createHeatmapRoutes } from "./routes";
 import { HeatmapRawReadService } from "./services/raw-reads.service";
 import { HeatmapAutoCapture } from "./services/auto-capture.service";
-import { getHeatmapEngine, initHeatmapEngine } from "./services/heatmap-engine.service";
+import { heatmapIngestService, createHeatmapIngestService } from "./services/heatmap-ingest.service";
 import { HeatmapService } from "./services/heatmap.service";
 import { HeatmapRetentionPurge } from "./services/retention-purge.service";
 import { initializeScreenshotCache } from "./services/screenshot-cache";
@@ -39,9 +40,11 @@ export function initHeatmapsModule(deps: {
   const heatmaps = new HeatmapService(settings, autoCapture);
 
   return {
+    lane: heatmapsLane(() => heatmapIngestService()),
+
     screenshots,
     maintenance: new HeatmapScreenshotRefreshService(settings, autoCapture),
-    ingest: () => getHeatmapEngine(),
+    ingest: () => heatmapIngestService(),
     retention: new HeatmapRetentionPurge(),
     usage: new HeatmapUsageCounter(),
     rawReads: new HeatmapRawReadService(),
@@ -58,7 +61,7 @@ export function initHeatmapsModule(deps: {
       // The engine takes the bus, so it has to be built from the composed graph — an
       // engine created lazily on first ingest publishes to nobody. Here rather than
       // above because constructing it arms flush timers.
-      initHeatmapEngine(deps.websitesModule.trackerWebsites);
+      createHeatmapIngestService(deps.websitesModule.trackerWebsites);
     },
 
     /**
@@ -71,7 +74,7 @@ export function initHeatmapsModule(deps: {
      * has not finished.
      */
     async stop() {
-      await getHeatmapEngine().shutdown();
+      await heatmapIngestService().shutdown();
       await shutdownScreenshotBrowser();
     },
   };

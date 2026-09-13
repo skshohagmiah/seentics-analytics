@@ -1,9 +1,14 @@
 import { and, eq, isNotNull, isNull, lt, sql as raw } from "drizzle-orm";
-import { db, ingestBatches } from "../../../db";
-import type { IngestCategory, QueuedBatch } from "../interfaces";
+import { db, ingestBatches, sql } from "../../../db";
+import type { IngestLane, QueuedBatch } from "../interfaces";
 
 /**
  * The durable queue, in Postgres.
+ *
+ * One naming seam to know about: the table's column is `category` and the code calls it
+ * `lane`. The column is older than the rename and holds the same six values; renaming it
+ * would mean a migration that has to land in lockstep with a deploy, on the one table that
+ * is holding undelivered work while it happens. Not worth it for a word.
  *
  * Modelled on `platform/outbox/outbox-repository.ts` — same claim-and-park shape,
  * whose failure modes the team has already reasoned about — with one difference that
@@ -15,7 +20,7 @@ import type { IngestCategory, QueuedBatch } from "../interfaces";
  *
  * Sized for the slowest sink rather than the average one: a heatmap batch can spend a
  * while in S3 puts, and re-claiming a batch that is still being applied is only safe
- * because of the `ingest_applied_batches` marker — for recordings it would also break the
+ * because the apply's own transaction completes the row — for recordings it would also break the
  * per-session chunk ordering the partition key exists to protect. Long enough that only a
  * genuinely dead worker hits it; short enough that its batches are not stranded for the
  * rest of the day.
@@ -33,12 +38,20 @@ const UNIQUE_VIOLATION = "23505";
  */
 export async function enqueueBatch(batch: {
   batchId: string;
-  category: IngestCategory;
+  lane: IngestLane;
   partitionKey: string;
-  payload: Record<string, unknown>;
+  /** Already serialized by the producer — see `BatchQueue.enqueue`. */
+  payloadJson: string;
   rowCount: number;
 }): Promise<void> {
-  await db.insert(ingestBatches).values(batch).onConflictDoNothing();
+  // Raw rather than `db.insert(...).values(...)`: the payload arrives as text and is cast
+  // straight to jsonb, so the driver never re-serializes a batch the producer has already
+  // serialized once to derive its id.
+  await sql`
+    INSERT INTO ingest_batches (batch_id, category, partition_key, payload, row_count)
+    VALUES (${batch.batchId}, ${batch.lane}, ${batch.partitionKey}, ${batch.payloadJson}::jsonb, ${batch.rowCount})
+    ON CONFLICT (batch_id) DO NOTHING
+  `
 }
 
 /**
@@ -49,7 +62,7 @@ export async function enqueueBatch(batch: {
  * instant the statement returns — before the caller has applied anything. The previous
  * version relied on exactly that lock to mean "claimed", and so claimed nothing: two
  * workers would take the same row, and two batches for one partition key would be applied
- * concurrently. The markers in `ingest_applied_batches` hid the first problem for
+ * concurrently. The completion marker hid the first problem for
  * analytics, funnels, automations and heatmaps. Recordings had no such cover — chunk
  * sequences are assigned per session, and two concurrent batches for one session overwrite
  * each other's chunks in object storage.
@@ -83,7 +96,7 @@ export async function enqueueBatch(batch: {
  * and `countParked` is the thing to alert on.
  */
 export async function claimPendingBatches(
-  category: IngestCategory,
+  lane: IngestLane,
   limit: number,
   maxAttempts: number,
 ): Promise<QueuedBatch[]> {
@@ -93,14 +106,14 @@ export async function claimPendingBatches(
       batch_id: string;
       category: string;
       partition_key: string;
-      payload: Record<string, unknown>;
+      payload: { rows: unknown[] };
       row_count: number;
       attempts: number;
     }>(raw`
       WITH leased AS (
         SELECT partition_key
         FROM ingest_batches
-        WHERE category = ${category}
+        WHERE category = ${lane}
           AND completed_at IS NULL
           AND claimed_at IS NOT NULL
           AND claimed_at > now() - ${leaseMs} * interval '1 millisecond'
@@ -108,7 +121,7 @@ export async function claimPendingBatches(
       candidates AS (
         SELECT DISTINCT ON (b.partition_key) b.batch_id, b.created_at
         FROM ingest_batches b
-        WHERE b.category = ${category}
+        WHERE b.category = ${lane}
           AND b.completed_at IS NULL
           AND b.attempts < ${maxAttempts}
           AND NOT EXISTS (SELECT 1 FROM leased l WHERE l.partition_key = b.partition_key)
@@ -134,9 +147,9 @@ export async function claimPendingBatches(
 
     return [...rows].map((r) => ({
       batchId: r.batch_id,
-      category: r.category as IngestCategory,
+      lane: r.category as IngestLane,
       partitionKey: r.partition_key,
-      payload: r.payload,
+      payload: r.payload as { rows: unknown[] },
       rowCount: r.row_count,
       attempts: r.attempts,
     }));
@@ -156,14 +169,6 @@ function isUniqueViolation(err: unknown): boolean {
     err !== null &&
     (err as { code?: unknown }).code === UNIQUE_VIOLATION
   );
-}
-
-/** Mark a batch applied. The sink's own marker is what makes this safe to race. */
-export async function markBatchCompleted(batchId: string): Promise<void> {
-  await db
-    .update(ingestBatches)
-    .set({ completedAt: new Date(), claimedAt: null })
-    .where(eq(ingestBatches.batchId, batchId));
 }
 
 /**
@@ -202,9 +207,9 @@ export async function releaseBatchClaims(batchIds: string[]): Promise<void> {
     .where(and(isNull(ingestBatches.completedAt), raw`batch_id = ANY(${batchIds})`));
 }
 
-/** Pending batches in one category — the queue depth a health check reports. */
+/** Pending batches in one lane — the queue depth a health check reports. */
 export async function countPendingBatches(
-  category: IngestCategory,
+  lane: IngestLane,
   maxAttempts: number,
 ): Promise<number> {
   const [row] = await db
@@ -212,7 +217,7 @@ export async function countPendingBatches(
     .from(ingestBatches)
     .where(
       and(
-        eq(ingestBatches.category, category),
+        eq(ingestBatches.category, lane),
         isNull(ingestBatches.completedAt),
         lt(ingestBatches.attempts, maxAttempts),
       ),

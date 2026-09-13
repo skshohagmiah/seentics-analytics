@@ -1,3 +1,4 @@
+import type { LaneSpec } from "../../ingest/interfaces";
 import type { AuthedRouter } from "../../../platform/http/router";
 import type { UsageCounter } from "../../../platform/usage";
 import type { ModuleLifecycle } from "../../../app/module";
@@ -11,6 +12,9 @@ import type {
 
 /** Everything the heatmaps module offers. */
 export interface HeatmapsModule extends ModuleLifecycle {
+  /** This module's ingest lane. The only one with a byte ceiling — see `heatmapsLane`. */
+  lane: LaneSpec;
+
   /**
    * On-demand Playwright capture, for the tracker's `/request-screenshot`.
    *

@@ -12,7 +12,7 @@
  * per request, un-awaited, so the profile was the only per-request database write on a path
  * built to avoid exactly that — and being `void`ed, it applied no backpressure when the
  * pool was already saturated. It now goes through the ingest queue like every other
- * category: buffered, committed to `ingest_batches`, applied by `IngestWorker`.
+ * category: buffered, committed to `ingest_batches`, applied by `BatchWorker`.
  *
  * Which is why this rejects on failure rather than swallowing. The caller is a worker that
  * retries and parks, not an HTTP handler that must answer regardless.

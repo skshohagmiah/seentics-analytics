@@ -71,7 +71,7 @@ export const websites = pgTable(
 /**
  * Durable ingest queue.
  *
- * The buffers in `IngestQueueService` are memory: anything not yet flushed dies with the
+ * The buffers in `CollectBuffer` are memory: anything not yet flushed dies with the
  * process, which is the durability trade `IngestFlusher` documents. This table moves the
  * boundary forward — the flush writes a row here instead of calling the module sinks, and
  * a worker claims and applies it. A crash now costs at most one in-flight batch rather
@@ -94,7 +94,12 @@ export const websites = pgTable(
 export const ingestBatches = pgTable(
   "ingest_batches",
   {
-    /** Content-derived, so a redelivery of the same rows reuses the row. See `batchIdFor`. */
+    /**
+     * Content-derived, so a redelivery of the same rows reuses the row — see
+     * `serializeBatch`. This row is also the exactly-once marker: `applyBatchOnce` flips
+     * `completed_at` inside the write's own transaction, so a batch cannot be applied
+     * twice. There used to be a second table for that; one fact only needs one row.
+     */
     batchId: text("batch_id").primaryKey(),
     /** `analytics` | `funnels` | `automations` | `recordings` | `heatmaps`. */
     category: varchar("category", { length: 32 }).notNull(),
@@ -143,36 +148,6 @@ export const ingestBatches = pgTable(
   ],
 );
 
-/**
- * Applied ingest batches, for exactly-once effect under at-least-once delivery.
- *
- * Every ingest write path is retried — the flush retries in process, and a durable queue
- * retries across processes — and none of the four target tables is naturally idempotent:
- * `analytics_events` is a plain insert with no natural key, `heatmap_points` upserts
- * additively (`intensity = intensity + EXCLUDED.intensity`), and a replayed batch there
- * compounds silently and unboundedly.
- *
- * Rather than three different per-table strategies, one marker covers all of them: the
- * writer inserts its `batch_id` here inside the *same transaction* as the data, so the
- * marker and the rows commit or roll back together. A repeat insert conflicts, the
- * writer sees it was already applied, and skips.
- *
- * `applied_at` exists to be pruned — these rows are only useful for as long as a
- * redelivery is possible.
- */
-export const ingestAppliedBatches = pgTable(
-  "ingest_applied_batches",
-  {
-    /** Stable across every redelivery of the same batch. Assigned by the producer. */
-    batchId: text("batch_id").primaryKey(),
-    /** Which write path applied it — `analytics`, `heatmaps`, `recordings`, `automations`. */
-    category: varchar("category", { length: 32 }).notNull(),
-    /** Rows the batch actually wrote, for diagnosing a suspicious replay. */
-    rowCount: integer("row_count").notNull().default(0),
-    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index("ix_ingest_applied_at").on(t.appliedAt)],
-);
 
 export const websiteMembers = pgTable(
   "website_members",

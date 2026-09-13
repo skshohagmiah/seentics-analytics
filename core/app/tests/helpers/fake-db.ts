@@ -314,7 +314,6 @@ export function fakeDbModule() {
     users: table("users"),
     websites: table("websites"),
     ingestBatches: table("ingest_batches"),
-    ingestAppliedBatches: table("ingest_applied_batches"),
     websiteMembers: table("website_members"),
     websiteInvitations: table("website_invitations"),
     goals: table("goals"),

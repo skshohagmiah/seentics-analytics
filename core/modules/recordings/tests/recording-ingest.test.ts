@@ -41,15 +41,11 @@ const seenBatches = new Set<string>();
  * `SyntaxError` pointing at the real file that does export the name.
  */
 mock.module("../../../platform/idempotency", () => ({
-  applyBatchOnceSql: async (_batchId: string, _category: string, write: () => Promise<number>) =>
+  applyBatchOnceSql: async (_batchId: string, write: () => Promise<number>) =>
     ({ applied: true, rowCount: await write() }),
-  pruneAppliedBatches: async () => 0,
-  batchIdFor: (...parts: unknown[]) => parts.join(":"),
-  applyBatchOnce: async (
-    batchId: string,
-    _category: string,
-    write: (tx: unknown) => Promise<number>,
-  ) => {
+  batchIdFromContent: (...parts: unknown[]) => parts.join(":"),
+  serializeBatch: (rows: unknown[]) => ({ json: JSON.stringify(rows), batchId: "batch" }),
+  applyBatchOnce: async (batchId: string, write: (tx: unknown) => Promise<number>) => {
     if (seenBatches.has(batchId)) return { applied: false, rowCount: 0 };
     const rowCount = await write({});
     // Recorded only on success, exactly as the transaction's rollback would.
@@ -58,7 +54,7 @@ mock.module("../../../platform/idempotency", () => ({
   },
 }));
 
-const { ReplayEngine } = await import("../services/recording-engine.service");
+const { RecordingIngestService } = await import("../services/recording-ingest.service");
 
 const T0 = Date.UTC(2026, 0, 15, 10, 0, 0);
 
@@ -84,10 +80,10 @@ function rowFor(sessionId: string): WrittenRow | undefined {
 }
 
 function makeEngine() {
-  return new ReplayEngine();
+  return new RecordingIngestService();
 }
 
-describe("ReplayEngine.processEvents", () => {
+describe("RecordingIngestService.processEvents", () => {
   beforeEach(() => {
     written.length = 0;
     seenBatches.clear();

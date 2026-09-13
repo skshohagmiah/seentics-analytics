@@ -1,6 +1,6 @@
 import { env } from "../../../config";
 import { getNextReplayChunkSequence, uploadSessionChunkGzip } from "../../../platform/lib/s3";
-import { ReplaySpool, type WarmTail } from "./spool";
+import { SessionChunkBuffer, type WarmTail } from "./session-chunk-buffer";
 import { applyBatchOnce } from "../../../platform/idempotency";
 import { upsertSessionMetaBatch, type SessionUpsertRow } from "../repositories/recording.repository";
 import { compareReplayEnvelopeEvents } from "./event-order";
@@ -135,14 +135,14 @@ function normalizeReplayPageUrl(u: unknown): string {
   }
 }
 
-export class ReplayEngine implements RecordingIngest {
-  private spool: ReplaySpool;
+export class RecordingIngestService implements RecordingIngest {
+  private spool: SessionChunkBuffer;
   private bucket: string;
 
   constructor() {
     const c = env();
     this.bucket = c.s3.bucket;
-    this.spool = new ReplaySpool({
+    this.spool = new SessionChunkBuffer({
       chunkFlushMs: c.replayChunkFlushMs,
       idlePurgeMs: c.spoolIdleMs,
       getInitialSequence: async (websiteId, sessionId) =>
@@ -310,7 +310,7 @@ export class ReplayEngine implements RecordingIngest {
      * buffered: the retry re-does both halves from a clean slate instead of appending the
      * same events to the spool a second time.
      */
-    const { applied } = await applyBatchOnce(batchId, "recordings", async (tx) => {
+    const { applied } = await applyBatchOnce(batchId, async (tx) => {
       let written = 0;
       for (let i = 0; i < rows.length; i += pgStatementSize) {
         written += await upsertSessionMetaBatch(tx, batchId, rows.slice(i, i + pgStatementSize));
@@ -361,32 +361,24 @@ function hasRageClickPattern(clicks: RageClick[]): boolean {
   return false;
 }
 
-let _engine: ReplayEngine | null = null;
+let _engine: RecordingIngestService | null = null;
 
 /**
- * The process-wide engine.
+ * The process-wide service.
  *
- * Creates one on first use if nothing initialised it, so an early ingest still has
- * somewhere to go.
+ * Creates one on first use, so an early ingest still has somewhere to go, and constructing
+ * it is what arms the chunk flush timer and opens the storage client. Still an accessor
+ * rather than an injected dependency because `session-detail` and `session-delete` need
+ * the live warm tail from free functions; injecting it there means threading it through
+ * the service and the routes, which is a change worth making on its own.
  */
-export function getReplayEngine(): ReplayEngine {
-  if (!_engine) _engine = new ReplayEngine();
+export function recordingIngestService(): RecordingIngestService {
+  if (!_engine) _engine = new RecordingIngestService();
   return _engine;
 }
 
-/**
- * Create the engine. Called by `initRecordingsModule().start`.
- *
- * Idempotent: constructing an engine arms a flush timer and opens an S3 client, so
- * replacing a live one would strand both along with whatever it had buffered. An early
- * `getReplayEngine()` therefore wins, and this returns that same instance.
- */
-export function initReplayEngine(): ReplayEngine {
-  return getReplayEngine();
-}
-
 /** Shut down and forget the engine, if one was ever built. Constructs nothing. */
-export async function stopReplayEngine(): Promise<void> {
+export async function stopRecordingIngestService(): Promise<void> {
   const engine = _engine;
   _engine = null;
   if (engine) await engine.shutdown();

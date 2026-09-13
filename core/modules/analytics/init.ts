@@ -1,3 +1,4 @@
+import { analyticsLane, funnelLane } from "./ingest-lane";
 import type { AppConfig } from "../../config";
 import type { WebsitesModule } from "../websites/interfaces";
 import type { AnalyticsModule, TrafficSummary } from "./interfaces";
@@ -33,14 +34,18 @@ export function initAnalyticsModule(deps: {
   const traffic = new AnalyticsTrafficSummaryService();
   const eventFeed = new AnalyticsEventFeedService();
 
+  const ingest = new AnalyticsIngestService();
+
   return {
+    lanes: { analytics: analyticsLane(ingest), funnels: funnelLane(ingest) },
+
     getTrafficSummary(websiteIds: string[]): Promise<Map<string, TrafficSummary>> {
       return traffic.summarizeSites(websiteIds);
     },
 
     reads,
     publicDashboard,
-    ingest: new AnalyticsIngestService(),
+    ingest,
     pageviewUrls: new AnalyticsPageviewUrlService(),
     rawEvents: eventFeed,
     funnelEvents: eventFeed,

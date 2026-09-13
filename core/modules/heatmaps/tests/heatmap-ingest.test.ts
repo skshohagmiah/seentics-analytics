@@ -8,7 +8,7 @@ process.env.DATABASE_URL ??= "postgres://test-not-connected";
  * The engine's write path.
  *
  * The property under test throughout is durability: `processEvents` must not resolve
- * until everything the batch carries has been written, because `IngestWorker` marks the
+ * until everything the batch carries has been written, because `BatchWorker` marks the
  * durable batch completed the moment it does. The engine used to buffer points and drain
  * them on a 400ms timer, so a restart, a full buffer or a failed flush lost data that the
  * queue had already recorded as applied — and none of it was visible beyond a log line.
@@ -33,11 +33,7 @@ mock.module("../repositories/heatmap-writes.repository", () => ({
 const applied = new Set<string>();
 
 mock.module("../../../platform/idempotency", () => ({
-  applyBatchOnceSql: async (
-    batchId: string,
-    _category: string,
-    write: (tx: unknown) => Promise<number>,
-  ) => {
+  applyBatchOnceSql: async (batchId: string, write: (tx: unknown) => Promise<number>) => {
     if (upsertThrowsFor === batchId) throw new Error("pg exploded");
     if (applied.has(batchId)) return { applied: false, rowCount: 0 };
     const rowCount = await write({});
@@ -45,11 +41,11 @@ mock.module("../../../platform/idempotency", () => ({
     return { applied: true, rowCount };
   },
   applyBatchOnce: async () => ({ applied: true, rowCount: 0 }),
-  pruneAppliedBatches: async () => 0,
-  batchIdFor: (...parts: unknown[]) => parts.join(":"),
+  batchIdFromContent: (...parts: unknown[]) => parts.join(":"),
+  serializeBatch: (rows: unknown[]) => ({ json: JSON.stringify(rows), batchId: "batch" }),
 }));
 
-const { HeatmapEngine } = await import("../services/heatmap-engine.service");
+const { HeatmapIngestService } = await import("../services/heatmap-ingest.service");
 
 /** Records what the engine hands the snapshot half, without touching S3. */
 class FakeSnapshots {
@@ -79,7 +75,7 @@ function clickRow(websiteId: string, nx = 0.5, ny = 0.5): HeatmapTrackerEvent {
   } as unknown as HeatmapTrackerEvent;
 }
 
-let engine: InstanceType<typeof HeatmapEngine>;
+let engine: InstanceType<typeof HeatmapIngestService>;
 let snapshots: FakeSnapshots;
 
 beforeEach(() => {
@@ -87,12 +83,12 @@ beforeEach(() => {
   applied.clear();
   upsertThrowsFor = null;
   snapshots = new FakeSnapshots();
-  engine = new HeatmapEngine({ snapshots: snapshots as never });
+  engine = new HeatmapIngestService({ snapshots: snapshots as never });
 });
 
 describe("durability", () => {
   /**
-   * The regression this file exists for. `IngestWorker` marks the batch completed as
+   * The regression this file exists for. `BatchWorker` marks the batch completed as
    * soon as this resolves, so anything not yet written at that moment is unrecoverable —
    * the batch will never be redelivered.
    */
