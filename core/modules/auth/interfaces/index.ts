@@ -17,6 +17,12 @@ export type {
   UserRow,
 } from "./user-repository.interface";
 export type { PasswordHasher } from "./password-hasher.interface";
+export type {
+  AuthAccountQuery,
+  AuthResult,
+  AuthTokens,
+  CredentialAuthentication,
+} from "./authentication.interface";
 
 /** The whole module surface, as a peer receives it at composition time. */
 export type { AuthModule } from "./auth.module";

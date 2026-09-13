@@ -216,32 +216,6 @@ export interface WebsiteTrafficReads {
   /** Every website the user owns, each with its summary. Batched, not N+1. */
   listOwnedWithTraffic(ownerId: string): Promise<WebsiteWithTraffic[]>;
 
-  /** One website with traffic, after an access check. */
-  getWithTraffic(websiteId: string, userId: string): Promise<WebsiteWithTraffic | null>;
-}
-
-/**
- * Writes that check the caller's access first.
- *
- * The authenticated HTTP layer holds this rather than `WebsiteMutations`: the
- * unchecked variants exist for the outbox and internal paths, and a route reaching
- * for `update` instead of `updateForUser` is a missing authorization check that
- * types would not otherwise catch. Keeping them in separate interfaces is what makes
- * that mistake impossible from the router.
- */
-export interface WebsiteUserMutations {
-  updateForUser(
-    websiteId: string,
-    userId: string,
-    input: UpdateWebsiteInput,
-  ): Promise<Website | null>;
-
-  deleteForUser(websiteId: string, userId: string): Promise<boolean>;
-
-  /** Toggle the public dashboard link; returns the share id, or `null` when off. */
-  setPublicSharingForUser(
-    websiteId: string,
-    userId: string,
-    enabled: boolean,
-  ): Promise<string | null>;
+  /** One website with traffic. The HTTP controller performs access checks first. */
+  getWithTraffic(websiteId: string): Promise<WebsiteWithTraffic | null>;
 }

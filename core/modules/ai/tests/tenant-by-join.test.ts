@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { TENANT_BY_JOIN } from "../services/shared";
+import { TENANT_BY_JOIN } from "../services/ai-generated-sql-guard.service";
 import { ANALYTICS_TABLES } from "../services/domains/analytics";
 import { AUTOMATIONS_TABLES } from "../services/domains/automations";
 import { FUNNELS_TABLES } from "../services/domains/funnels";

@@ -93,7 +93,12 @@ const recordings = {
 };
 
 function app() {
-  return createRecordingRoutes({ recordings, websites: new FakeWebsites() });
+  return createRecordingRoutes({
+    recordingList: recordings,
+    recordingDetails: recordings,
+    recordingDeletion: recordings,
+    websites: new FakeWebsites(),
+  });
 }
 
 function get(path: string, user?: string) {

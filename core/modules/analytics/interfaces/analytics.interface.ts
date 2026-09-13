@@ -91,12 +91,11 @@ export interface AnalyticsRealtime {
     opts?: { withinMinutes?: number },
   ): Promise<unknown>;
 
-  /** Day-windowed, unlike its siblings here. */
-  getActivityTrends(websiteRef: string, query: AnalyticsQueryParams): Promise<unknown>;
 }
 
 /** Journey and per-visitor analysis. */
 export interface AnalyticsBehaviour {
+  getActivityTrends(websiteId: string, query: AnalyticsQueryParams): Promise<unknown>;
   getPathAnalysis(websiteId: string, query: AnalyticsQueryParams): Promise<unknown>;
   getVisitorInsights(websiteId: string, query: AnalyticsQueryParams): Promise<unknown>;
   getCustomEvents(websiteId: string, query: AnalyticsQueryParams): Promise<unknown>;

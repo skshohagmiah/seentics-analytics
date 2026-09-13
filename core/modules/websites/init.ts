@@ -4,11 +4,17 @@ import type { WebsitesModule } from "./interfaces";
 import { WebsiteUsageCounter } from "./services/usage-count.service";
 import { PostgresWebsiteRepository } from "./repositories/postgres-website.repository";
 import { createWebsiteRoutes } from "./routes";
-import { CachedWebsiteQuery } from "./services/cached-website-query";
+import { CachedWebsiteQuery } from "./services/cached-website-query.service";
 import { TrackerWebsiteService } from "./services/tracker-website.service";
 import { WebsiteRetentionSiteSource } from "./services/retention-sites.service";
-import { WebsiteInvitationService } from "./services/invitations.service";
-import { WebsiteService } from "./services/website.service";
+import { WebsiteInvitationService } from "./services/website-invitation.service";
+import { WebsiteMemberService } from "./services/website-member.service";
+import { WebsiteMutationService } from "./services/website-mutation.service";
+import { WebsitePublicSharingService } from "./services/website-public-sharing.service";
+import { WebsiteQueryService } from "./services/website-query.service";
+import { WebsiteTrafficService } from "./services/website-traffic.service";
+import * as goals from "./services/website-goal.service";
+import { PostgresWebsitePrivacyService } from "./services/postgres-website-privacy.service";
 
 /**
  * Build the websites module.
@@ -32,26 +38,38 @@ export function initWebsitesModule(deps: {
 }): WebsitesModule {
   // `cached` is referenced before it is assigned, but only from inside a callback the
   // service invokes after a mutation — by which time the binding is initialised.
-  const service = new WebsiteService(
-    new PostgresWebsiteRepository(),
-    deps.analyticsModule,
-    (websiteId) => cached.invalidate(websiteId),
-  );
-  const cached = new CachedWebsiteQuery(service);
+  const repository = new PostgresWebsiteRepository();
+  const query = new WebsiteQueryService(repository);
+  const cached = new CachedWebsiteQuery(query);
+  const onChanged = (websiteId: string) => cached.invalidate(websiteId);
+  const mutations = new WebsiteMutationService(repository, onChanged);
+  const sharing = new WebsitePublicSharingService(repository, onChanged);
+  const traffic = new WebsiteTrafficService(repository, deps.analyticsModule);
   const tracker = new TrackerWebsiteService();
+  const invitations = new WebsiteInvitationService(deps.authModule.users);
 
   return {
     query: cached,
-    accessChecks: service,
-    sharing: service,
-    invitations: new WebsiteInvitationService(deps.authModule.users),
+    accessChecks: query,
+    sharing: query,
+    invitations,
     trackerWebsites: tracker,
 
     // Its own routes take the uncached service: this is the module doing the mutating,
     // and it must read its own writes.
     usage: new WebsiteUsageCounter(),
     retentionSites: new WebsiteRetentionSiteSource(),
-    routes: createWebsiteRoutes({ websites: service, users: deps.authModule.users }),
+    routes: createWebsiteRoutes({
+      websites: query,
+      traffic,
+      mutations,
+      sharing,
+      users: deps.authModule.users,
+      goals,
+      members: new WebsiteMemberService(deps.authModule.users),
+      invitations,
+      privacy: new PostgresWebsitePrivacyService(),
+    }),
 
     // Tracker cache sizing comes from config, so it waits for `start` like any other
     // configured resource.

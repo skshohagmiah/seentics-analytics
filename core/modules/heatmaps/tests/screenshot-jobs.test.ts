@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { HeatmapIngestEvent } from "../../../platform/lib/types";
-import { eventsToScreenshotJobs } from "../services/point-mapping";
-import { isJpeg, mergeNormalizedPages, pageUrlOnSite } from "../services/shared";
+import { eventsToScreenshotJobs } from "../services/heatmap-event-projection.service";
+import { isJpeg, mergeNormalizedPages, pageUrlOnSite } from "../services/heatmap-data-normalization.service";
 import type { PageSummaryRow } from "../interfaces";
 
 /**
@@ -165,7 +165,7 @@ describe("eventsToScreenshotJobs", () => {
     });
 
     it("drops a payload above the 4 MiB ceiling", () => {
-      // Deliberately tighter than the dashboard's 10 MiB in `layout-snapshot.service`:
+      // Deliberately tighter than the dashboard's 10 MiB in `heatmap-layout-snapshot.service`:
       // this one arrives from a public endpoint at tracker volume.
       const over = jpegBase64((4 << 20) + 1);
 

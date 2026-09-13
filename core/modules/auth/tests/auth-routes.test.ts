@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Context, Next } from "hono";
-import { AuthService } from "../services/auth.service";
+import { AuthAccountQueryService } from "../services/auth-account-query.service";
+import { CredentialAuthenticationService } from "../services/credential-authentication.service";
 import { FakePasswordHasher, FakeUserRepository } from "./fake-user-repository";
 
 /**
@@ -47,15 +48,16 @@ mock.module("../../../platform/middleware/auth", () => ({
 const { createAuthRoutes, createUserAuthRoutes } = await import("../routes");
 
 let repo: FakeUserRepository;
-let auth: AuthService;
+let auth: CredentialAuthenticationService;
 let publicRouter: ReturnType<typeof createAuthRoutes>;
 let userRouter: ReturnType<typeof createUserAuthRoutes>;
 
 beforeEach(() => {
   repo = new FakeUserRepository();
-  auth = new AuthService(repo, new FakePasswordHasher());
-  publicRouter = createAuthRoutes(auth);
-  userRouter = createUserAuthRoutes(auth);
+  auth = new CredentialAuthenticationService(repo, new FakePasswordHasher());
+  const deps = { credentials: auth, accounts: new AuthAccountQueryService(repo) };
+  publicRouter = createAuthRoutes(deps);
+  userRouter = createUserAuthRoutes(deps);
 });
 
 /** Matches `Hono.request`, which is typed as returning either form. */

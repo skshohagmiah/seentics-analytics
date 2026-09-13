@@ -27,26 +27,6 @@ import { testConfig } from "../../../app/tests/helpers/test-config";
 const mockResolveWebsite = mock(async (_id: string): Promise<WebsiteTrackerRow | null> => null);
 const mockListGoals      = mock(async () => []);
 const mockBuildConfig    = mock(async () => ({ website_id: "w1", goals: [], replay_enabled: false }));
-const mockHandleEvents     = mock(() => {});
-const mockHandleFunnels    = mock(() => {});
-const mockHandleAutomations = mock(() => {});
-const mockHandleRecordings  = mock(() => {});
-const mockHandleHeatmaps    = mock(() => {});
-const mockHandleVisitorProfile = mock(() => {});
-
-// Every named export `routes.ts` imports must appear here. Bun resolves the mock as
-// the whole module, so a handler added to `collect-handlers` and left out of this
-// object fails as `SyntaxError: Export named '...' not found` — pointing at the real
-// file, which does export it.
-mock.module("../services/collect-handlers", () => ({
-  handleEvents: mockHandleEvents,
-  handleVisitorProfile: mockHandleVisitorProfile,
-  handleFunnels: mockHandleFunnels,
-  handleAutomations: mockHandleAutomations,
-  handleRecordings: mockHandleRecordings,
-  handleHeatmaps: mockHandleHeatmaps,
-}));
-
 // A complete `Logger`: `child` must exist and must itself return a logger, because
 // modules call `log.child(...)` at import time. Bun's module mocks are global, so an
 // incomplete stub here breaks every other test file that imports the real logger.
@@ -112,9 +92,6 @@ class FakeFunnelConfig implements FunnelTrackerConfig {
     return this.rows as Funnel[];
   }
 
-  async activeForWebsiteRef(): Promise<Funnel[]> {
-    throw new Error("/tracker/init must use activeForTracker");
-  }
 }
 
 /** Active automations for `/init`. */
@@ -179,6 +156,7 @@ function makeAutomationRow(overrides: Partial<AutomationRow> = {}): AutomationRo
 // ─── Load the factory after the mocks ────────────────────────────────────────
 
 let createTrackerRoutes: typeof import("../routes").createTrackerRoutes;
+let createTrackerCollectService: typeof import("../services/tracker-collect.service").createTrackerCollectService;
 /** Records enqueues so a test can assert what `/collect` buffered. */
 function makeFakeQueue() {
   return {
@@ -200,13 +178,13 @@ let screenshots: FakeScreenshotCapture;
 
 beforeAll(async () => {
   ({ createTrackerRoutes } = await import("../routes"));
+  ({ createTrackerCollectService } = await import("../services/tracker-collect.service"));
 });
 
 beforeEach(() => {
   mockResolveWebsite.mockClear();
   mockListGoals.mockClear();
   mockBuildConfig.mockClear();
-  mockHandleEvents.mockClear();
   // Default: website not found
   mockResolveWebsite.mockResolvedValue(null);
 
@@ -218,7 +196,7 @@ beforeEach(() => {
   // Requested at the paths `index.ts` mounts under `/api/v1/tracker`.
   queue = makeFakeQueue();
   app = createTrackerRoutes({
-    queue,
+    collect: createTrackerCollectService(queue),
     automations,
     automationEvaluation,
     funnels,
@@ -401,7 +379,7 @@ describe("POST /collect", () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json() as { message: string }).message).toBe("tracking disabled by privacy policy");
-    expect(mockHandleEvents).not.toHaveBeenCalled();
+    expect(queue.events).toHaveLength(0);
   });
 
   it("requires an explicit consent flag for strict sites", async () => {
@@ -417,7 +395,7 @@ describe("POST /collect", () => {
       body: JSON.stringify({ website_id: "site_abc", consent: true, events: [{ type: "pageview" }] }),
     });
     expect(allowed.status).toBe(200);
-    expect(mockHandleEvents).toHaveBeenCalledTimes(1);
+    expect(queue.events).toHaveLength(1);
   });
 
   it("returns 200 and enqueues events for a valid collect payload", async () => {
@@ -434,7 +412,7 @@ describe("POST /collect", () => {
     const body = await res.json() as any;
     expect(body.status).toBe("ok");
     expect(body.queued).toBe(1);
-    expect(mockHandleEvents).toHaveBeenCalledTimes(1);
+    expect(queue.events).toHaveLength(1);
   });
 
   it("queued count reflects total items across all arrays", async () => {
@@ -480,7 +458,7 @@ describe("POST /collect", () => {
       }),
     });
     // Just assert it didn't crash — the UA override path was exercised
-    expect(mockHandleEvents).toHaveBeenCalledTimes(1);
+    expect(queue.events).toHaveLength(1);
   });
 });
 

@@ -27,8 +27,8 @@ let PublicDashboardService: any;
 let AnalyticsTrafficSummaryService: any;
 
 beforeAll(async () => {
-  ({ PublicDashboardService } = await import("../services/public-dashboard.service"));
-  ({ AnalyticsTrafficSummaryService } = await import("../services/traffic-summary.service"));
+  ({ PublicDashboardService } = await import("../services/public-dashboard-analytics.service"));
+  ({ AnalyticsTrafficSummaryService } = await import("../services/website-traffic-summary.service"));
 });
 
 beforeEach(resetDb);

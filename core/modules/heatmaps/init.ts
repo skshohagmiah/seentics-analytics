@@ -4,15 +4,16 @@ import type { WebsitesModule } from "../websites/interfaces";
 import type { HeatmapsModule } from "./interfaces";
 import { HeatmapUsageCounter } from "./services/usage-count.service";
 import { createHeatmapRoutes } from "./routes";
-import { HeatmapRawReadService } from "./services/raw-reads.service";
-import { HeatmapAutoCapture } from "./services/auto-capture.service";
+import { HeatmapRawReadService } from "./services/heatmap-raw-read.service";
+import { HeatmapAutoCapture } from "./services/heatmap-auto-capture.service";
 import { heatmapIngestService, createHeatmapIngestService } from "./services/heatmap-ingest.service";
-import { HeatmapService } from "./services/heatmap.service";
+import { HeatmapMutationService } from "./services/heatmap-mutation.service";
+import { HeatmapQueryService } from "./services/heatmap-query.service";
 import { HeatmapRetentionPurge } from "./services/retention-purge.service";
-import { initializeScreenshotCache } from "./services/screenshot-cache";
-import { HeatmapScreenshotRefreshService } from "./services/screenshot-refresh.service";
-import { HeatmapScreenshotService } from "./services/screenshot.service";
-import { HeatmapSettingsService } from "./services/settings.service";
+import { initializeScreenshotCache } from "./services/screenshot-cache.service";
+import { HeatmapScreenshotRefreshService } from "./services/heatmap-screenshot-refresh.service";
+import { HeatmapScreenshotService } from "./services/playwright-screenshot-capture.service";
+import { HeatmapSettingsService } from "./services/heatmap-capture-settings.service";
 import { shutdownScreenshotBrowser } from "./lib/playwright-screenshots";
 
 /**
@@ -20,7 +21,7 @@ import { shutdownScreenshotBrowser } from "./lib/playwright-screenshots";
  *
  * The five-class order below is forced by the dependency arrows and is nobody else's
  * business: `autoCapture` needs a capture function, and both `HeatmapService` and the
- * refresh service need `autoCapture`, so the screenshot service is built first and its
+ * refresh service need `autoCapture`, so the playwright-screenshot-capture.service is built first and its
  * bound `captureForResolved` passed through — which is why that method is bound in its
  * constructor. This used to sit in the composition root, which meant the top-level app
  * file knew the name of a method on a class two layers inside this module.
@@ -37,7 +38,8 @@ export function initHeatmapsModule(deps: {
     screenshots.captureForResolved,
     deps.analyticsModule.pageviewUrls,
   );
-  const heatmaps = new HeatmapService(settings, autoCapture);
+  const heatmapQueries = new HeatmapQueryService(settings, autoCapture);
+  const heatmapMutations = new HeatmapMutationService();
 
   return {
     lane: heatmapsLane(() => heatmapIngestService()),
@@ -49,7 +51,8 @@ export function initHeatmapsModule(deps: {
     usage: new HeatmapUsageCounter(),
     rawReads: new HeatmapRawReadService(),
     routes: createHeatmapRoutes({
-      heatmaps,
+      heatmapQueries,
+      heatmapMutations,
       screenshots,
       websites: deps.websitesModule.accessChecks,
     }),

@@ -1,7 +1,11 @@
 import { sql as pgSql, sessionReplays } from "../../../db";
 import { sql as dsql } from "drizzle-orm";
 import type { BatchTx } from "../../../platform/idempotency";
-import type { SessionMetaRow } from "../interfaces";
+import type {
+  SessionListFilters,
+  SessionListSummary,
+  SessionMetaRow,
+} from "../interfaces";
 
 
 export type SessionUpsertRow = {
@@ -193,15 +197,6 @@ export async function upsertSessionMetaBatch(
 }
 
 /** Server-side narrowing for the session list. Every field is optional. */
-export type SessionListFilters = {
-  /** Substring match across session id, country, browser, os, device and entry page. */
-  search?: string;
-  /** Lower-cased device class, e.g. `desktop`. */
-  device?: string;
-  hasErrors?: boolean;
-  hasRageClicks?: boolean;
-};
-
 /** `%` and `_` are ILIKE wildcards; a user typing them means the literal character. */
 function likeTerm(term: string): string {
   return `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -267,14 +262,6 @@ export async function listSessions(
 }
 
 /** Totals over every session matching the filters, not just the page being shown. */
-export type SessionListSummary = {
-  total: number;
-  withErrors: number;
-  withRageClicks: number;
-  /** Mean over sessions that have a duration at all; 0 when none do. */
-  avgDurationSeconds: number;
-};
-
 /**
  * Aggregate over the whole filtered set, ignoring the page window.
  *

@@ -35,6 +35,40 @@ mock.module("../../../platform/middleware/auth", () => ({
 const WEBSITE_UUID = "11111111-1111-4111-8111-111111111111";
 const OWNER = "user_1";
 
+function makeWebsite(): Website {
+  return {
+    id: WEBSITE_UUID,
+    ownerId: OWNER,
+    name: "One",
+    url: "one.example",
+    trackingId: "ST-0001",
+    isActive: true,
+    isVerified: true,
+    automationEnabled: true,
+    funnelEnabled: true,
+    heatmapEnabled: true,
+    heatmapIncludePatterns: null,
+    heatmapExcludePatterns: null,
+    heatmapLayoutEnabled: true,
+    replayEnabled: true,
+    replaySamplingRate: 1,
+    replayIncludePatterns: null,
+    replayExcludePatterns: null,
+    verificationToken: "tok",
+    publicShareId: null,
+    settings: {
+      allowedOrigins: [],
+      trackingEnabled: true,
+      dataRetentionDays: 365,
+      useIpAnonymization: false,
+      respectDoNotTrack: false,
+      allowRawDataExport: false,
+    },
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+  };
+}
+
 function makeFunnel(overrides: Partial<Funnel> = {}): Funnel {
   return {
     id: "fn_1",
@@ -58,7 +92,7 @@ function makeFunnel(overrides: Partial<Funnel> = {}): Funnel {
   };
 }
 
-/** Only `getRole` is reachable from the routes; the rest would be a bug. */
+/** Controller-facing website access and public tracker lookup. */
 class FakeWebsiteQuery implements WebsiteQuery {
   roles = new Map<string, WebsiteRole>();
 
@@ -70,8 +104,8 @@ class FakeWebsiteQuery implements WebsiteQuery {
     return this.roles.get(`${websiteRef}:${userId}`) ?? null;
   }
 
-  async getById(): Promise<Website | null> {
-    throw new Error("routes must not resolve websites themselves");
+  async getById(websiteId: string): Promise<Website | null> {
+    return websiteId === WEBSITE_UUID ? makeWebsite() : null;
   }
 
   async listOwnedBy(): Promise<Website[]> {
@@ -150,12 +184,8 @@ class FakeFunnels
     return this.report_;
   }
 
-  async activeForTracker(): Promise<Funnel[]> {
-    throw new Error("the public endpoint must use activeForWebsiteRef");
-  }
-
-  async activeForWebsiteRef(websiteRef: string): Promise<Funnel[]> {
-    this.activeRefs.push(websiteRef);
+  async activeForTracker(websiteId: string): Promise<Funnel[]> {
+    this.activeRefs.push(websiteId);
     return this.funnels.filter((f) => f.is_active);
   }
 }
@@ -179,7 +209,12 @@ describe("funnel routes", () => {
     websites = new FakeWebsiteQuery();
     websites.grant(WEBSITE_UUID, OWNER, "owner");
 
-    const routes = createFunnelRoutes({ funnels, websites });
+    const routes = createFunnelRoutes({
+      definitions: funnels,
+      performance: funnels,
+      trackerConfig: funnels,
+      websites,
+    });
     app = new Hono();
     app.route("/api/v1/funnels", routes.publicRoutes);
     app.route("/api/v1/websites", routes.authRoutes);

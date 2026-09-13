@@ -23,10 +23,17 @@
  * consumes them directly and the field names are part of the public contract.
  */
 
-import type { HeatmapIngestEvent, HeatmapPointOut } from "../../../platform/lib/types";
-import type { HeatmapTrackerEvent } from "../services/tracker-mapping";
+import type {
+  HeatmapIngestEvent,
+  HeatmapPointOut,
+  TrackerEvent,
+} from "../../../platform/lib/types";
 
-export type { HeatmapTrackerEvent };
+/** Tracker event plus the request context needed by heatmap ingestion. */
+export type HeatmapTrackerEvent = TrackerEvent & {
+  clientUa?: string;
+  heatmapLayoutEnabled?: boolean;
+};
 
 export type { HeatmapPointOut };
 
@@ -241,6 +248,14 @@ export type BatchCaptureScreenshotResult = {
   error?: string;
 };
 
+/** Raised when a requested capture URL is outside the website's registered domain. */
+export class ScreenshotTargetNotAllowedError extends Error {
+  constructor(pageUrl: string) {
+    super(`page_url not allowed: ${pageUrl}`);
+    this.name = "ScreenshotTargetNotAllowedError";
+  }
+}
+
 /**
  * On-demand page capture via a headless browser.
  *
@@ -309,7 +324,7 @@ export interface HeatmapSettings {
  *
  * Separate from `HeatmapQuery` because the raw API returns unmerged, unnormalised rows
  * — it is a data-export surface, not the dashboard's. `platform/public-api` used to import
- * `services/page-query.service` directly to get at these.
+ * `services/heatmap-page-query.service` directly to get at these.
  */
 export interface HeatmapRawReads {
   listPagesRaw(websiteId: string): Promise<{ pages: HeatmapPageSummary[] }>;

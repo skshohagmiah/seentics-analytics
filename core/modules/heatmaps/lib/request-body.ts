@@ -8,7 +8,7 @@ import type { AuthVars } from "../../../platform/middleware/auth";
  * viewport means "use the default", not "bad request" — so they parse the envelope
  * themselves instead of going through a zod validator like the rest of the module.
  *
- * Shared by `routes.ts` and `capture-routes.ts`, which is the whole reason they are here
+ * Shared by the screenshot and capture controllers.
  * rather than closed over inside one of the two factories.
  */
 

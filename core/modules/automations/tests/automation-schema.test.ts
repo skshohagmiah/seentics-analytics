@@ -7,8 +7,8 @@ import {
   CLIENT_ACTION_TYPES,
   TRIGGER_TYPES,
 } from "../validators/automation.schema";
-import { MAX_DELAY_SECONDS, MAX_NODES } from "../services/automation-graph";
-import { OPERATORS } from "../services/condition-evaluator";
+import { MAX_DELAY_SECONDS, MAX_NODES } from "../lib/automation-graph";
+import { OPERATORS } from "../lib/automation-condition-evaluator";
 
 /**
  * Definition validation.

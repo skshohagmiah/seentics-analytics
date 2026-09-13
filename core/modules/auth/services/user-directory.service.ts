@@ -1,6 +1,6 @@
 import type { FrontendUser, UserDirectory, UserProfile } from "../interfaces";
 import type { UserRepository } from "../interfaces/user-repository.interface";
-import { toFrontendUser } from "./user-mapper";
+import { toFrontendUser } from "../lib/user-presenter";
 
 /**
  * `UserDirectory` over the `users` table.

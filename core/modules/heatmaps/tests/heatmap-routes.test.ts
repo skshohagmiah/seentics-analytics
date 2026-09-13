@@ -11,7 +11,7 @@ import type {
 } from "../interfaces";
 
 /**
- * The heatmaps HTTP surface — `routes.ts` and the capture half in `capture-routes.ts`.
+ * The heatmaps HTTP surface declared in `routes.ts`, including capture endpoints.
  *
  * This module had no route tests at all, which is the wrong place for that gap: two of
  * these endpoints make the server fetch a caller-chosen URL with a real browser and store
@@ -30,8 +30,8 @@ import type {
  *
  * `screenshots` and `heatmaps` arrive as injected fakes because `createHeatmapRoutes` is
  * a factory; the real services never load. `playwright-screenshots` and `layout-db` are
- * stubbed only because `capture-routes` imports the error class from
- * `screenshot.service`, which reaches both transitively — and `layout-db` opens `db` at
+ * stubbed only because the capture controller imports the error class from
+ * `playwright-screenshot-capture.service`, which reaches both transitively — and `layout-db` opens `db` at
  * module scope.
  */
 
@@ -73,7 +73,7 @@ mock.module("../lib/layout-db", () => ({
 }));
 
 const { createHeatmapRoutes } = await import("../routes");
-const { ScreenshotTargetNotAllowedError } = await import("../services/screenshot.service");
+const { ScreenshotTargetNotAllowedError } = await import("../interfaces");
 
 const WEBSITE = "11111111-1111-4111-8111-111111111111";
 const OTHER_WEBSITE = "22222222-2222-4222-8222-222222222222";
@@ -221,7 +221,8 @@ beforeEach(() => {
   heatmaps = new FakeHeatmaps();
   screenshots = new FakeScreenshots();
   app = createHeatmapRoutes({
-    heatmaps: heatmaps as unknown as Parameters<typeof createHeatmapRoutes>[0]["heatmaps"],
+    heatmapQueries: heatmaps,
+    heatmapMutations: heatmaps,
     screenshots,
     websites,
   });

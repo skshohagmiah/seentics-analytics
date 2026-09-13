@@ -5,7 +5,7 @@ import type {
   AiSuccessRecord,
   WebsiteId,
 } from "../interfaces/ai-repository.interface";
-import type { AIHistoryItem } from "../services/shared";
+import type { AIHistoryItem } from "../interfaces/ai-query.types";
 
 /** Hard timeout for AI-generated SQL. Bounds the cost of a runaway or expensive query. */
 const AI_STATEMENT_TIMEOUT_MS = Number(process.env.AI_STATEMENT_TIMEOUT_MS ?? 8_000);

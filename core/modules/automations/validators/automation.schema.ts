@@ -11,15 +11,15 @@
 import { z } from "zod";
 import { zNonEmptyString } from "../../../platform/validation";
 import { validateWebhookUrl } from "../../../platform/lib/origin";
-import { OPERATORS } from "../services/condition-evaluator";
+import { OPERATORS } from "../lib/automation-condition-evaluator";
 import {
   MAX_DELAY_SECONDS,
   MAX_EDGES,
   MAX_NODES,
   MAX_SWITCH_CASES,
   type AutomationGraph,
-} from "../services/automation-graph";
-import { validateGraph } from "../services/automation-graph-validate";
+} from "../lib/automation-graph";
+import { validateGraph } from "../lib/automation-graph-validation";
 
 /** Trigger types the tracker can emit. Mirrors the builder's palette. */
 export const TRIGGER_TYPES = [

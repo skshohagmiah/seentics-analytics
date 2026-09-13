@@ -12,12 +12,22 @@
  */
 
 import type { TrackerEvent } from "../../../platform/lib/types";
-import type {
-  SessionListFilters,
-  SessionListSummary,
-} from "../repositories/recording.repository";
 
-export type { SessionListFilters, SessionListSummary };
+/** Server-side narrowing for the session list. Every field is optional. */
+export type SessionListFilters = {
+  search?: string;
+  device?: string;
+  hasErrors?: boolean;
+  hasRageClicks?: boolean;
+};
+
+/** Totals over all sessions matching the filters, not just the current page. */
+export type SessionListSummary = {
+  total: number;
+  withErrors: number;
+  withRageClicks: number;
+  avgDurationSeconds: number;
+};
 
 /** Summary of one recorded session, as the session list renders it. */
 export type RecordingSummary = {
@@ -36,16 +46,75 @@ export type RecordingSummary = {
   pagesViewed: number;
 };
 
-/**
- * A recording ready for playback.
- *
- * Re-exported from the service rather than restated here. The real shape is a
- * four-way discriminated union — pending, chunked, bundled, or missing — that
- * encodes how the recording is stored and whether it is ready. Restating it in the
- * interface would mean maintaining two copies of a contract the player parses
- * byte-for-byte, and the copy would drift.
- */
-export type { ReplaySessionDetail as RecordingDetail } from "../services/session-detail.service";
+export type RecordingChunkUrl = {
+  sequence: number;
+  url: string;
+  expires_at: string;
+};
+
+/** The session-list projection rendered in the player's header. */
+export type RecordingDetailMeta = {
+  sessionId: string;
+  websiteId: string;
+  browser: string;
+  device: string;
+  os: string;
+  country: string;
+  entryPage: string;
+  startedAt: string;
+  hasRageClicks: boolean;
+  hasErrors: boolean;
+  durationSeconds: number;
+  pagesViewed: number;
+};
+
+type RecordingWarmChunk = { sequence: number; data: unknown; timestamp: string };
+
+/** A recording response in each of its storage/readiness states. */
+export type RecordingDetail =
+  | {
+      status: 200;
+      body: {
+        session_id: string;
+        meta: RecordingDetailMeta | null;
+        warm_chunks: RecordingWarmChunk[];
+        recording_pending: false;
+        replay_storage?: "legacy_inline";
+      };
+    }
+  | {
+      status: 200;
+      body: {
+        session_id: string;
+        meta: RecordingDetailMeta | null;
+        recording_pending: true;
+        replay_storage?: "pending";
+      };
+    }
+  | {
+      status: 200;
+      body: {
+        session_id: string;
+        meta: RecordingDetailMeta | null;
+        replay_storage: "chunks";
+        replay_chunk_count: number;
+        replay_chunk_urls: RecordingChunkUrl[];
+        warm_chunks?: RecordingWarmChunk[];
+        recording_pending: false;
+      };
+    }
+  | {
+      status: 200;
+      body: {
+        session_id: string;
+        meta: RecordingDetailMeta | null;
+        replay_storage: "bundle";
+        replay_url: string;
+        replay_url_expires_at: string;
+        recording_pending: false;
+      };
+    }
+  | { status: 404; body: { error: string } };
 
 /** Read access to recordings, for the dashboard. */
 export interface RecordingQuery {
@@ -84,7 +153,7 @@ export interface RecordingQuery {
   getSessionDetail(
     websiteRef: string,
     sessionId: string,
-  ): Promise<import("../services/session-detail.service").ReplaySessionDetail>;
+  ): Promise<RecordingDetail>;
 }
 
 /** Deletion, kept separate so the read path cannot reach it. */
@@ -117,7 +186,7 @@ export interface RecordingIngest {
  *
  * Separate from `RecordingQuery` for the same reason as `HeatmapRawReads`: the raw API
  * is a data-export surface with its own projection. `platform/public-api` used to import
- * `services/session-list.service` directly.
+ * `services/recording-session-list.service` directly.
  */
 export interface RecordingRawReads {
   listSessionsRaw(

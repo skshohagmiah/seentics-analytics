@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { normalizeHostname } from "../../../modules/websites/services/hostname";
+import { normalizeHostname } from "../../../modules/websites/lib/hostname";
 
 describe("normalizeHostname", () => {
   it("accepts a bare hostname", () => {

@@ -6,7 +6,9 @@
  */
 export type {
   SessionMetaRow,
+  RecordingChunkUrl,
   RecordingDetail,
+  RecordingDetailMeta,
   RecordingIngest,
   RecordingMutations,
   RecordingQuery,

@@ -157,8 +157,7 @@ export interface FunnelPerformance {
  * session start: it must expose active funnels and nothing else, and the constructor
  * of anything holding it should make a mutation unreachable.
  *
- * Two methods because there are two tracker entry points holding different things,
- * and collapsing them would force one of the two to over- or under-resolve.
+ * Controllers resolve public website references before calling this capability.
  */
 export interface FunnelTrackerConfig {
   /**
@@ -168,14 +167,6 @@ export interface FunnelTrackerConfig {
    */
   activeForTracker(websiteId: string): Promise<Funnel[]>;
 
-  /**
-   * For `/api/v1/funnels/active`, which has only a query parameter that may be
-   * either identifier form. Resolves once, then delegates. Returns an empty list for
-   * an unknown reference rather than throwing: the caller is an unauthenticated
-   * tracker snippet on a page whose site may since have been deleted, and it has no
-   * error path other than dropping funnel tracking anyway.
-   */
-  activeForWebsiteRef(websiteRef: string): Promise<Funnel[]>;
 }
 
 /**

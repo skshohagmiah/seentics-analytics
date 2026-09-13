@@ -1,16 +1,18 @@
 /**
  * Public contracts for the ai module.
  *
- * `AiQuery` is the capability; `AiAccessCheck` is the guard the routes apply before
- * spending an LLM call.
+ * Query execution and history are separate capabilities; website access belongs to
+ * the HTTP boundary and is supplied by the websites module.
  */
 export type {
-  AiAccessCheck,
   AiQuery,
+  AiQueryExecution,
+  AiQueryHistory,
   AIDomain,
   AIHistoryItem,
   AIQueryResult,
 } from "./ai.interface";
+export { AIDailyLimitError } from "./ai.interface";
 
 /** The whole module surface, as a peer receives it at composition time. */
 export type { AiModule } from "./ai.module";

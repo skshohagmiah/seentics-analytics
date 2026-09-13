@@ -1,7 +1,7 @@
 import { applyBatchOnce } from "../../../platform/idempotency";
 import type { TrackerEvent } from "../../../platform/lib/types";
 import { ingestAnalyticsBatch } from "../repositories/analytics-batch.repository";
-import { trackerRowsToAnalytics } from "./tracker-mapping";
+import { trackerRowsToAnalytics } from "./tracker-analytics-event-mapping.service";
 import type { AnalyticsIngestWriter } from "../interfaces";
 
 /**

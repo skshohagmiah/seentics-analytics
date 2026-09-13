@@ -4,7 +4,7 @@ import type {
   WebsiteQuery,
   WebsiteRole,
 } from "../../../modules/websites/interfaces";
-import { CachedWebsiteQuery } from "../../../modules/websites/services/cached-website-query";
+import { CachedWebsiteQuery } from "../../../modules/websites/services/cached-website-query.service";
 
 function makeWebsite(overrides: Partial<Website> = {}): Website {
   return {

@@ -120,6 +120,17 @@ function makeAnalytics(): FakeAnalytics & AnalyticsReads {
   return fake as FakeAnalytics & AnalyticsReads;
 }
 
+function analyticsControllerServices(analytics: AnalyticsReads) {
+  return {
+    dashboard: analytics,
+    dimensions: analytics,
+    realtime: analytics,
+    journeys: analytics,
+    conversions: analytics,
+    exporter: analytics,
+  };
+}
+
 /** Only `getRole` is reachable from the routes; anything else would be a boundary break. */
 class FakeWebsiteQuery implements WebsiteQuery {
   roles = new Map<string, WebsiteRole>();
@@ -176,7 +187,12 @@ describe("analytics routes", () => {
 
     app = new Hono();
     // Mounted at the base path the app uses, so the paths under test are the real ones.
-    app.route("/api/v1/analytics", createAnalyticsRoutes({ analytics, publicDashboard, websites, cfg: testConfig() }));
+    app.route("/api/v1/analytics", createAnalyticsRoutes({
+      ...analyticsControllerServices(analytics),
+      publicDashboard,
+      websites,
+      cfg: testConfig(),
+    }));
   });
 
   function request(path: string, user?: string, init: RequestInit = {}) {
@@ -557,7 +573,12 @@ describe("analytics routes", () => {
       // The guard against a new endpoint shipping untested — and, more importantly,
       // shipping unguarded, since the 401/403 sweeps above are driven off the same table.
       const registered = new Set(
-        createAnalyticsRoutes({ analytics, publicDashboard, websites, cfg: testConfig() })
+        createAnalyticsRoutes({
+          ...analyticsControllerServices(analytics),
+          publicDashboard,
+          websites,
+          cfg: testConfig(),
+        })
           .routes.filter((r) => r.method !== "ALL")
           .map((r) => `${r.method} ${r.path}`),
       );
@@ -569,7 +590,12 @@ describe("analytics routes", () => {
 
     it("does not claim coverage of routes that no longer exist", async () => {
       const registered = new Set(
-        createAnalyticsRoutes({ analytics, publicDashboard, websites, cfg: testConfig() })
+        createAnalyticsRoutes({
+          ...analyticsControllerServices(analytics),
+          publicDashboard,
+          websites,
+          cfg: testConfig(),
+        })
           .routes.filter((r) => r.method !== "ALL")
           .map((r) => `${r.method} ${r.path}`),
       );

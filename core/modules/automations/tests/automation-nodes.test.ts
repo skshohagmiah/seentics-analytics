@@ -1,9 +1,9 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { fakeDbModule, fakeLogger, insertsInto, resetDb } from "./helpers/fake-db";
 import type { EvaluateRequest } from "../interfaces";
-import type { AutomationGraph, GraphNode } from "../services/automation-graph";
+import type { AutomationGraph, GraphNode } from "../lib/automation-graph";
 import { TRIGGER_TYPES, CLIENT_ACTION_TYPES } from "../validators/automation.schema";
-import { OPERATORS, UNARY_OPERATORS, evaluateConditions, type Operator } from "../services/condition-evaluator";
+import { OPERATORS, UNARY_OPERATORS, evaluateConditions, type Operator } from "../lib/automation-condition-evaluator";
 
 /**
  * Every node the builder can place, exercised one at a time.
@@ -22,12 +22,12 @@ const executeWebhook = mock(async () => {});
 mock.module("../../../db", fakeDbModule);
 mock.module("../../../platform/lib/logger", fakeLogger);
 
-let AutomationEvaluationService: typeof import("../services/evaluate.service").AutomationEvaluationService;
+let AutomationEvaluationService: typeof import("../services/automation-evaluation.service").AutomationEvaluationService;
 
 let automationRows: Array<{ id: string; definition: Record<string, unknown> }> = [];
 
 beforeAll(async () => {
-  ({ AutomationEvaluationService } = await import("../services/evaluate.service"));
+  ({ AutomationEvaluationService } = await import("../services/automation-evaluation.service"));
 });
 
 const WEBSITE = "11111111-1111-4111-8111-111111111111";

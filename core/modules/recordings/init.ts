@@ -3,20 +3,20 @@ import type { WebsitesModule } from "../websites/interfaces";
 import type { RecordingsModule } from "./interfaces";
 import { RecordingUsageCounter } from "./services/usage-count.service";
 import { createRecordingRoutes } from "./routes";
-import { RecordingRawReadService } from "./services/raw-reads.service";
+import { RecordingRawReadService } from "./services/recording-raw-read.service";
 import {
   recordingIngestService,
   stopRecordingIngestService,
 } from "./services/recording-ingest.service";
-import { RecordingService } from "./services/recording.service";
+import { batchDeleteReplaySessions } from "./services/recording-session-deletion.service";
+import { getReplaySessionDetail } from "./services/recording-session-detail.service";
+import { listReplaySessions } from "./services/recording-session-list.service";
 import { RecordingRetentionPurge } from "./services/retention-purge.service";
 
 /** Build the recordings module. */
 export function initRecordingsModule(deps: {
   websitesModule: WebsitesModule;
 }): RecordingsModule {
-  const recordings = new RecordingService(deps.websitesModule.query);
-
   return {
     lane: recordingsLane(() => recordingIngestService()),
 
@@ -27,7 +27,9 @@ export function initRecordingsModule(deps: {
     usage: new RecordingUsageCounter(),
     rawReads: new RecordingRawReadService(),
     routes: createRecordingRoutes({
-      recordings,
+      recordingList: { listSessions: listReplaySessions },
+      recordingDetails: { getSessionDetail: getReplaySessionDetail },
+      recordingDeletion: { batchDelete: batchDeleteReplaySessions },
       websites: deps.websitesModule.accessChecks,
     }),
 

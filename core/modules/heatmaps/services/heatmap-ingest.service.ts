@@ -2,10 +2,10 @@ import { env } from "../../../config";
 import { batchUpsertPoints } from "../repositories/heatmap-writes.repository";
 import type { HeatmapIngestEvent, HeatmapPointRow, ScreenshotJob } from "../../../platform/lib/types";
 import { applyBatchOnceSql } from "../../../platform/idempotency";
-import type { HeatmapIngest } from "../interfaces";
-import { eventsToPoints, eventsToScreenshotJobs } from "./point-mapping";
-import { SnapshotIngestService } from "./snapshot-ingest.service";
-import { trackerRowsToHeatmapEvents, type HeatmapTrackerEvent } from "./tracker-mapping";
+import type { HeatmapIngest, HeatmapTrackerEvent } from "../interfaces";
+import { eventsToPoints, eventsToScreenshotJobs } from "./heatmap-event-projection.service";
+import { SnapshotIngestService } from "./heatmap-snapshot-ingest.service";
+import { trackerRowsToHeatmapEvents } from "./tracker-heatmap-event-mapping.service";
 import type { TrackerWebsites } from "../../websites/interfaces";
 import { log as baseLog } from "../../../platform/lib/logger";
 

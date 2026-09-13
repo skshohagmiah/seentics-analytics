@@ -1,4 +1,4 @@
-import type { AIHistoryItem, AIVizType } from "../services/shared";
+import type { AIHistoryItem, AIVizType } from "./ai-query.types";
 
 /** Everything recorded about a finished attempt that succeeded. */
 export type AiSuccessRecord = {
@@ -45,7 +45,7 @@ export interface AiRepository {
    * Contract, and the reason this is storage's job rather than the service's: the
    * statement runs in a transaction that is `READ ONLY` and carries a statement
    * timeout, and `boundId` is passed as `$1` rather than interpolated. The string
-   * validator in `services/shared.ts` is the first half of the defence and this is the
+   * generated-SQL guard is the first half of the defence and this is the
    * second — neither is sufficient alone.
    */
   runGuarded(sql: string, boundId: string): Promise<Record<string, unknown>[]>;

@@ -11,8 +11,8 @@ import {
   reachableFrom,
   type AutomationGraph,
   type GraphNode,
-} from "../services/automation-graph";
-import { validateGraph } from "../services/automation-graph-validate";
+} from "../lib/automation-graph";
+import { validateGraph } from "../lib/automation-graph-validation";
 
 /**
  * The graph core.

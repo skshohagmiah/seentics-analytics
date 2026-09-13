@@ -4,7 +4,7 @@ import type { UserDirectory } from "../../modules/auth/interfaces";
 
 /**
  * A factory now, so the user lookup arrives as a port. This file used to import
- * `getUserById` out of `services/auth.service.ts` — the module that also holds password
+ * `getUserById` out of the former all-purpose auth service — the module that also held password
  * hashing and token signing.
  */
 export function createUserProfileRoutes(deps: { users: UserDirectory }) {

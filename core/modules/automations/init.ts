@@ -5,8 +5,10 @@ import { AutomationUsageCounter } from "./services/usage-count.service";
 import { PostgresAutomationRepository } from "./repositories/postgres-automation.repository";
 import { createAutomationRoutes } from "./routes";
 import { AutomationIngestService } from "./services/automation-ingest.service";
-import { AutomationService } from "./services/automation.service";
-import { AutomationEvaluationService } from "./services/evaluate.service";
+import { AutomationCrudService } from "./services/automation-crud.service";
+import { AutomationInsightService } from "./services/automation-insight.service";
+import { TrackerAutomationSettingsService } from "./services/tracker-automation-settings.service";
+import { AutomationEvaluationService } from "./services/automation-evaluation.service";
 import { AutomationRetentionPurge } from "./services/retention-purge.service";
 import { VisitorProfileService } from "./services/visitor-profile.service";
 
@@ -14,10 +16,10 @@ import { VisitorProfileService } from "./services/visitor-profile.service";
 export function initAutomationsModule(deps: {
   websitesModule: WebsitesModule;
 }): AutomationsModule {
-  const automations = new AutomationService(
-    new PostgresAutomationRepository(),
-    deps.websitesModule.query,
-  );
+  const repository = new PostgresAutomationRepository();
+  const automationCrud = new AutomationCrudService(repository);
+  const automationInsights = new AutomationInsightService(repository);
+  const trackerSettings = new TrackerAutomationSettingsService(repository);
 
   const triggers = new AutomationIngestService();
   const visitorProfiles = new VisitorProfileService();
@@ -28,7 +30,7 @@ export function initAutomationsModule(deps: {
       profiles: profilesLane(visitorProfiles),
     },
 
-    trackerSettings: automations,
+    trackerSettings,
     // Built here so it publishes onto the real bus. An evaluation service holding its
     // own bus would fire `automation.action_executed` at nobody.
     evaluation: new AutomationEvaluationService(),
@@ -37,7 +39,8 @@ export function initAutomationsModule(deps: {
     retention: new AutomationRetentionPurge(),
     usage: new AutomationUsageCounter(),
     routes: createAutomationRoutes({
-      automations,
+      automationCrud,
+      automationInsights,
       websites: deps.websitesModule.accessChecks,
     }),
   };

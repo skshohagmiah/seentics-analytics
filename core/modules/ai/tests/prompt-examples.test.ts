@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validateAndSanitizeSQL } from "../services/shared";
+import { validateAndSanitizeSQL } from "../services/ai-generated-sql-guard.service";
 import { ANALYTICS_PROMPT, ANALYTICS_TABLES } from "../services/domains/analytics";
 import { AUTOMATIONS_PROMPT, AUTOMATIONS_TABLES } from "../services/domains/automations";
 import { FUNNELS_PROMPT, FUNNELS_TABLES } from "../services/domains/funnels";

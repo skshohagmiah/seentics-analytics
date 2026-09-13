@@ -1,4 +1,4 @@
-import type { AIDomain, AIHistoryItem, AIQueryResult } from "../services/shared";
+import type { AIDomain, AIHistoryItem, AIQueryResult } from "./ai-query.types";
 
 /**
  * The ai module's public surface.
@@ -12,6 +12,14 @@ import type { AIDomain, AIHistoryItem, AIQueryResult } from "../services/shared"
 
 export type { AIDomain, AIHistoryItem, AIQueryResult };
 
+/** Raised when the authenticated user has exhausted the daily AI allowance. */
+export class AIDailyLimitError extends Error {
+  constructor(message = "AI daily query limit reached") {
+    super(message);
+    this.name = "AIDailyLimitError";
+  }
+}
+
 /**
  * Natural-language querying.
  *
@@ -19,25 +27,19 @@ export type { AIDomain, AIHistoryItem, AIQueryResult };
  * and executes it. Quota is enforced inside rather than by the caller, so no route
  * can accidentally skip it — exceeding it raises `AIDailyLimitError`.
  */
-export interface AiQuery {
-  runQuery(
+export interface AiQueryExecution {
+  run(
     userId: string,
     websiteRef: string,
     prompt: string,
     domain?: AIDomain | "auto",
   ): Promise<AIQueryResult>;
 
-  /** Recent prompts for this user and website, newest first. */
-  getHistory(userId: string, websiteRef: string, limit?: number): Promise<AIHistoryItem[]>;
 }
 
-/**
- * The website access check the ai routes apply.
- *
- * Separate from `AiQuery` because it is a guard rather than a capability: the routes
- * call it before `runQuery`, and nothing else in the module needs it.
- */
-export interface AiAccessCheck {
-  /** `true` when the user may query this website's data. */
-  userCanQuery(websiteRef: string, userId: string): Promise<boolean>;
+export interface AiQueryHistory {
+  /** Recent prompts for this user and website, newest first. */
+  history(userId: string, websiteId: string, limit?: number): Promise<AIHistoryItem[]>;
 }
+
+export type AiQuery = AiQueryExecution & AiQueryHistory;

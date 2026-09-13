@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validateAndSanitizeSQL } from "../services/shared";
+import { validateAndSanitizeSQL } from "../services/ai-generated-sql-guard.service";
 
 /**
  * The guard on LLM-authored SQL.

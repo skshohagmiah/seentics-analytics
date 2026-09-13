@@ -20,3 +20,8 @@ export type {
 
 /** The whole module surface, as a peer receives it at composition time. */
 export type { IngestModule } from "./ingest.module";
+export type {
+  ProcessTrackerCollectInput,
+  ProcessTrackerCollectResult,
+  TrackerCollectService,
+} from "./tracker-collect.interface";

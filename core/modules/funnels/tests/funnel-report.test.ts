@@ -3,7 +3,7 @@ import {
   buildFunnelReport,
   clampReportDays,
   reportWindow,
-} from "../services/funnel-report";
+} from "../services/funnel-report-calculation.service";
 import type { FunnelStepCount } from "../interfaces";
 
 const steps = [{ name: "View" }, { name: "Cart" }, { name: "Pay" }];

@@ -7,6 +7,7 @@ import type { IngestModule, LaneRegistry } from "./interfaces";
 import { createTrackerRoutes } from "./routes";
 import { CollectBuffer } from "./services/collect-buffer.service";
 import { BatchWorker } from "./services/batch-worker.service";
+import { createTrackerCollectService } from "./services/tracker-collect.service";
 import { postgresBatchQueue } from "./repositories/postgres-batch-queue";
 
 /**
@@ -50,7 +51,7 @@ export function initIngestModule(deps: {
   return {
     queue: buffer,
     routes: createTrackerRoutes({
-      queue: buffer,
+      collect: createTrackerCollectService(buffer),
       automations: deps.automationsModule.trackerSettings,
       automationEvaluation: deps.automationsModule.evaluation,
       funnels: deps.funnelsModule.trackerConfig,

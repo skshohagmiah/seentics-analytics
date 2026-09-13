@@ -42,7 +42,7 @@ export type UserProfile = {
  * Reading people.
  *
  * `platform/http/user-profiles.ts` used to import `getUserById` straight out of
- * `services/auth.service.ts`, which is also where password hashing and token signing
+ * the former all-purpose auth service, which also held password hashing and token signing
  * live — so an HTTP file in the platform layer had a compile-time path to both.
  */
 export interface UserDirectory {

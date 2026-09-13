@@ -18,7 +18,7 @@ import type {
   WebsiteRole,
   WebsiteSettings,
 } from "../interfaces";
-import { normalizeHostname } from "../services/hostname";
+import { normalizeHostname } from "../lib/hostname";
 
 type WebsiteRow = typeof websites.$inferSelect;
 

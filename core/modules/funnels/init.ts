@@ -3,7 +3,9 @@ import type { WebsitesModule } from "../websites/interfaces";
 import type { FunnelsModule } from "./interfaces";
 import { FunnelUsageCounter } from "./services/usage-count.service";
 import { createFunnelRoutes } from "./routes";
-import { FunnelService } from "./services/funnel.service";
+import { FunnelDefinitionService } from "./services/funnel-definition.service";
+import { FunnelPerformanceService } from "./services/funnel-performance.service";
+import { TrackerFunnelConfigService } from "./services/tracker-funnel-config.service";
 
 /** Build the funnels module. */
 export function initFunnelsModule(deps: {
@@ -11,14 +13,18 @@ export function initFunnelsModule(deps: {
   /** Funnel step counts are an `analytics_events` aggregation. */
   analyticsModule: AnalyticsModule;
 }): FunnelsModule {
-  const funnels = new FunnelService(
-    deps.websitesModule.query,
-    deps.analyticsModule.funnelEvents,
-  );
+  const definitions = new FunnelDefinitionService();
+  const performance = new FunnelPerformanceService(deps.analyticsModule.funnelEvents);
+  const trackerConfig = new TrackerFunnelConfigService();
 
   return {
-    trackerConfig: funnels,
+    trackerConfig,
     usage: new FunnelUsageCounter(),
-    routes: createFunnelRoutes({ funnels, websites: deps.websitesModule.accessChecks }),
+    routes: createFunnelRoutes({
+      definitions,
+      performance,
+      trackerConfig,
+      websites: deps.websitesModule.accessChecks,
+    }),
   };
 }

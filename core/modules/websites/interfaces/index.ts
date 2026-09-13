@@ -17,7 +17,6 @@ export type {
   WebsiteRole,
   WebsiteSettings,
   WebsiteTrafficReads,
-  WebsiteUserMutations,
   WebsiteWithTraffic,
 } from "./website.interface";
 
@@ -29,8 +28,18 @@ export type { WebsiteRepository } from "./website-repository.interface";
 export type { WebsiteInvitations } from "./website-invitations.interface";
 
 export type {
+  WebsiteGoalOperations,
+  WebsiteInvitationOperations,
+  WebsiteMemberOperations,
+} from "./website-administration.interface";
+
+export type {
+  WebsitePrivacySettings,
+  WebsitePrivacySettingsService,
+} from "./website-privacy.interface";
+
+export type {
   TrackerGoal,
   TrackerWebsites,
   WebsiteTrackerRow,
 } from "./tracker-website.interface";
-

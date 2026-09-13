@@ -23,7 +23,7 @@ export const goalPatchSchema = z.record(z.unknown());
  * This accepted any non-empty string up to 32 characters, so `"owner"` sailed through
  * with nothing downstream comparing it to the caller's own role — and an unrecognised
  * value was stored verbatim, to be normalised to `viewer` only when read back. The
- * privilege rules live in `services/members.ts`; this stops a nonsense role reaching
+ * privilege rules live in `WebsiteMemberService`; this stops a nonsense role reaching
  * the table in the first place.
  */
 export const websiteRoleSchema = z.enum(["owner", "admin", "member", "viewer"]);

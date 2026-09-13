@@ -2,9 +2,8 @@ import type { WebsitesModule } from "../websites/interfaces";
 import type { AiModule } from "./interfaces";
 import { AiUsageCounter } from "./services/usage-count.service";
 import { createAiRoutes } from "./routes";
-import { AiService } from "./services/ai.service";
-import { AiQueryRunner } from "./services/ai-query.service";
-import { OpenAiClient } from "./services/openai-client";
+import { NaturalLanguageQueryService } from "./services/natural-language-query.service";
+import { OpenAiLlmClient } from "./services/openai-llm-client.service";
 import { PostgresAiRepository } from "./repositories/postgres-ai.repository";
 
 /**
@@ -16,10 +15,14 @@ import { PostgresAiRepository } from "./repositories/postgres-ai.repository";
 export function initAiModule(deps: { websitesModule: WebsitesModule }): AiModule {
   // One repository for both: the usage counter reads the same table.
   const repo = new PostgresAiRepository();
-  const runner = new AiQueryRunner(repo, new OpenAiClient());
+  const runner = new NaturalLanguageQueryService(repo, new OpenAiLlmClient());
 
   return {
     usage: new AiUsageCounter(repo),
-    routes: createAiRoutes({ ai: new AiService(deps.websitesModule.query, runner) }),
+    routes: createAiRoutes({
+      query: runner,
+      history: runner,
+      websites: deps.websitesModule.accessChecks,
+    }),
   };
 }

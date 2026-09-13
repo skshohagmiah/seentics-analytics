@@ -1,7 +1,7 @@
 /**
  * Writing the visitor profile.
  *
- * `loadUserProfile` in `evaluate.service.ts` has always read this table to build the
+ * the automation evaluation service reads this table to build the
  * condition context, but nothing ever wrote a row — the only writer was an
  * `upsertUserProfile` method whose own comment recorded that no endpoint called it.
  * So `country`, `device`, `visitCount` and every custom property resolved to

@@ -200,7 +200,11 @@ describe("automation routes", () => {
     websites.grant(WEBSITE, MEMBER, "member");
 
     app = new Hono();
-    app.route("/api/v1/automations", createAutomationRoutes({ automations, websites }));
+    app.route("/api/v1/automations", createAutomationRoutes({
+      automationCrud: automations,
+      automationInsights: automations,
+      websites,
+    }));
   });
 
   function request(path: string, user?: string, init: RequestInit = {}) {
@@ -723,7 +727,7 @@ describe("automation routes", () => {
   describe("route coverage", () => {
     it("exercises every route the factory registers", async () => {
       const registered = new Set(
-        createAutomationRoutes({ automations, websites })
+        createAutomationRoutes({ automationCrud: automations, automationInsights: automations, websites })
           .routes.filter((r) => r.method !== "ALL")
           .map((r) => `${r.method} ${r.path}`),
       );
@@ -738,7 +742,7 @@ describe("automation routes", () => {
 
     it("does not claim coverage of routes that no longer exist", async () => {
       const registered = new Set(
-        createAutomationRoutes({ automations, websites })
+        createAutomationRoutes({ automationCrud: automations, automationInsights: automations, websites })
           .routes.filter((r) => r.method !== "ALL")
           .map((r) => `${r.method} ${r.path}`),
       );
