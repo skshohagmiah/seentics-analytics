@@ -70,7 +70,7 @@ export default function TrackerPage() {
             [
               <C>data-rrweb-src</C>,
               <span>
-                <C>rrweb.min.js</C> beside the tracker
+                <C>seentics-dom.min.js</C> beside the tracker
               </span>,
               'Where to load the session recorder from. Only needed if you serve the two files from different places.',
             ],
@@ -165,7 +165,7 @@ seentics.page();`}
           rows={[
             [<C>seentics.min.js</C>, '~11 KB', 'Always. Analytics, funnels, heatmaps and automations are all in here.'],
             [
-              <C>rrweb.min.js</C>,
+              <C>seentics-dom.min.js</C>,
               '~56 KB',
               'On demand — only when session recording is enabled for the site and this visitor is sampled in.',
             ],

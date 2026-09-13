@@ -50,7 +50,8 @@ export default function TrackerScript() {
   const apiHostOverride = process.env.NEXT_PUBLIC_SEENTICS_API_HOST?.trim();
 
   const trackerUrl = resolveTrackerScriptSrc();
-  const rrwebUrl = trackerUrl.replace(/[^/?#]*\.js[^/?#]*$/, 'rrweb.min.js');
+  // `seentics-dom.min.js`, not `rrweb.min.js` — filter lists block the latter by name.
+  const rrwebUrl = trackerUrl.replace(/[^/?#]*\.js[^/?#]*$/, 'seentics-dom.min.js');
 
   if (!siteId) {
     if (process.env.NODE_ENV === 'development') {

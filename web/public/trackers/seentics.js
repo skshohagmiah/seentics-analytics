@@ -68,11 +68,14 @@ if (!websiteId) {
   );
 }
 
-// rrweb.min.js lives next to seentics.min.js; override via data-rrweb-src if needed.
+// The DOM-recorder bundle lives next to seentics.min.js; override via data-rrweb-src.
+// Named `seentics-dom.min.js`, not `rrweb.min.js`: privacy filter lists match that
+// filename exactly, so the request was cancelled in-browser and replay silently
+// never started — sidecar events arrived with no DOM stream.
 const _scriptSrc = script?.src ?? '';
 const rrwebSrc =
   script?.getAttribute('data-rrweb-src') ??
-  (_scriptSrc ? _scriptSrc.replace(/[^/?#]*\.js[^/]*$/, 'rrweb.min.js') : '');
+  (_scriptSrc ? _scriptSrc.replace(/[^/?#]*\.js[^/]*$/, 'seentics-dom.min.js') : '');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -429,7 +432,7 @@ const flushBeacon = () => {
 let _rrwebLoadPromise = null;
 
 /**
- * Inject rrweb.min.js into the page once and return the record function.
+ * Inject the DOM-recorder bundle into the page once and return the record function.
  * Subsequent calls return the same promise (guaranteed single load).
  */
 const loadRrweb = () => {

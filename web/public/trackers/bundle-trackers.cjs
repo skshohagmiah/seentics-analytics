@@ -8,7 +8,9 @@
  *
  * This script produces (in the same dir):
  *   seentics.min.js   — minified production bundle  ← used by <script> tag
- *   rrweb.min.js      — minified rrweb loader
+ *   seentics-dom.min.js — minified rrweb loader (neutral name: filter lists block
+ *                         the literal filename `rrweb.min.js`, which silently
+ *                         disabled session replay for every blocker user)
  *
  * Script tags in the install snippet use seentics.min.js.
  */
@@ -38,7 +40,7 @@ async function main() {
   if (!minFile?.text) throw new Error('bundle-trackers: no output for seentics.min.js');
   fs.writeFileSync(path.join(trackersDir, 'seentics.min.js'), minFile.text);
 
-  // rrweb-loader.ts lives in public/trackers/ — minify → rrweb.min.js
+  // rrweb-loader.ts lives in public/trackers/ — minify → seentics-dom.min.js
   const rrwebResult = await esbuild.build({
     entryPoints:   [path.join(trackersDir, 'rrweb-loader.ts')],
     bundle:        true,
@@ -52,10 +54,10 @@ async function main() {
     write:         false,
   });
   const rrwebFile = rrwebResult.outputFiles?.[0];
-  if (!rrwebFile?.text) throw new Error('bundle-trackers: no output for rrweb.min.js');
-  fs.writeFileSync(path.join(trackersDir, 'rrweb.min.js'), rrwebFile.text);
+  if (!rrwebFile?.text) throw new Error('bundle-trackers: no output for seentics-dom.min.js');
+  fs.writeFileSync(path.join(trackersDir, 'seentics-dom.min.js'), rrwebFile.text);
 
-  console.log('[bundle-trackers] public/trackers/: seentics.min.js, rrweb.min.js');
+  console.log('[bundle-trackers] public/trackers/: seentics.min.js, seentics-dom.min.js');
 }
 
 main().catch((err) => {
