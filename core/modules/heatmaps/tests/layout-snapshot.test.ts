@@ -28,6 +28,7 @@ const storedRows = new Map<string, LayoutSnapshotRow>();
 const upserts: {
   websiteId: string;
   pagePath: string;
+  device: string;
   key: string;
   sha: string;
   w: number;
@@ -41,12 +42,13 @@ mock.module("../lib/layout-db", () => ({
   upsertLayoutSnapshot: async (
     websiteId: string,
     pagePath: string,
+    device: string,
     key: string,
     sha: string,
     w: number,
     h: number,
   ) => {
-    upserts.push({ websiteId, pagePath, key, sha, w, h });
+    upserts.push({ websiteId, pagePath, device, key, sha, w, h });
   },
   upsertLayoutHtmlSnapshot: async () => {},
 }));
@@ -100,6 +102,7 @@ function row(over: Partial<LayoutSnapshotRow> = {}): LayoutSnapshotRow {
     doc_width: 1440,
     doc_height: 3000,
     html_s3_key: null,
+    device_type: "desktop",
     updated_at: new Date("2026-09-01T00:00:00.000Z"),
     ...over,
   };

@@ -1,6 +1,7 @@
 import { env } from "../../../config";
 import { validateScreenshotTargetUrl } from "../../../platform/lib/origin";
 import { upsertLayoutSnapshot } from "../lib/layout-db";
+import { snapshotDeviceBucketForWidth } from "../lib/device";
 import { normalizeHeatmapPagePath } from "../lib/paths";
 import { captureAndStoreScreenshot } from "../lib/playwright-screenshots";
 import type {
@@ -65,6 +66,8 @@ async function captureAndUpsert(
     await upsertLayoutSnapshot(
       resolved.websiteId,
       normalizedPagePath,
+      // The capture rendered at this width, so that is the layout it depicts.
+      snapshotDeviceBucketForWidth(request.viewportWidth ?? 1920),
       result.s3Key,
       result.hash,
       result.width,

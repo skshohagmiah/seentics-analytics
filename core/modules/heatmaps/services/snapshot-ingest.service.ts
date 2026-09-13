@@ -7,6 +7,7 @@ import {
 } from "../lib/layout-db";
 import { extractPath, normalizeHeatmapPagePath } from "../lib/paths";
 import { heatmapScreenshotKey, heatmapHtmlSnapshotKey, layoutPathSlot } from "../lib/keys";
+import { snapshotDeviceBucket, snapshotDeviceBucketForWidth } from "../lib/device";
 import { validateScreenshotTargetUrl } from "../../../platform/lib/origin";
 import { putJpeg, putHtml } from "../../../platform/lib/s3";
 import { captureAndStoreScreenshot } from "../lib/playwright-screenshots";
@@ -99,18 +100,24 @@ export class SnapshotIngestService {
 
     const sum = createHash("sha256").update(job.jpeg).digest("hex");
 
-    const cachedSha256 = getCachedSnapshotSha256(job.websiteId, norm);
+    // This job carries no user agent — it is the tracker's own html2canvas render,
+    // queued from the page. The document width is the next best signal for which
+    // layout was captured, and for a page that does not scroll horizontally it is
+    // the viewport width.
+    const device = snapshotDeviceBucketForWidth(job.docW);
+
+    const cachedSha256 = getCachedSnapshotSha256(job.websiteId, norm, device);
     if (cachedSha256 === sum) return;
     if (cachedSha256 === null) {
-      const existing = await getLayoutSnapshot(job.websiteId, norm);
-      if (existing?.content_sha256 === sum) return;
+      const existing = await getLayoutSnapshot(job.websiteId, norm, device);
+      if (existing?.content_sha256 === sum && existing.device_type === device) return;
     }
 
-    const key = heatmapScreenshotKey(job.websiteId, layoutPathSlot(job.websiteId, norm));
+    const key = heatmapScreenshotKey(job.websiteId, layoutPathSlot(job.websiteId, norm, device));
     await putJpeg(this.bucket, key, job.jpeg);
 
     const { w: docW, h: docH } = plausibleDocSize(job.docW, job.docH, job.url);
-    await upsertLayoutSnapshot(job.websiteId, norm, key, sum, docW, docH);
+    await upsertLayoutSnapshot(job.websiteId, norm, device, key, sum, docW, docH);
     log.info({
       msg: "heatmap_tracker_screenshot_stored",
       url: job.url,
@@ -119,6 +126,7 @@ export class SnapshotIngestService {
       s3_key: key,
       doc_w: docW,
       doc_h: docH,
+      device,
     });
 
   }
@@ -139,23 +147,31 @@ export class SnapshotIngestService {
       html_bytes: html.length,
     });
 
+    // Same bucketing the points get (`point-mapping` calls `deviceTypeFromUA` on this
+    // exact field), so a background and the clicks drawn on it always agree on layout.
+    const device = snapshotDeviceBucket(ev.clientUa);
+
     const sum = createHash("sha256").update(html).digest("hex");
-    const existing = await getLayoutSnapshot(ev.websiteId, norm);
-    // Both conditions: a row carrying the same hash but no HTML key is a JPEG-only
-    // snapshot, and still needs the HTML written.
-    if (existing?.html_s3_key && existing.content_sha256 === sum) return;
+    const existing = await getLayoutSnapshot(ev.websiteId, norm, device);
+    // Three conditions: a row carrying the same hash but no HTML key is a JPEG-only
+    // snapshot and still needs the HTML written, and a row from a *different* bucket
+    // is not this bucket's background however identical its bytes are.
+    if (existing?.html_s3_key && existing.content_sha256 === sum && existing.device_type === device) {
+      return;
+    }
 
     const { w: docW, h: docH } = plausibleDocSize(ev.docW ?? 0, ev.docH ?? 0, ev.url ?? "", false);
 
-    const key = heatmapHtmlSnapshotKey(ev.websiteId, layoutPathSlot(ev.websiteId, norm));
+    const key = heatmapHtmlSnapshotKey(ev.websiteId, layoutPathSlot(ev.websiteId, norm, device));
     await putHtml(this.bucket, key, html);
-    await upsertLayoutHtmlSnapshot(ev.websiteId, norm, key, sum, docW, docH);
+    await upsertLayoutHtmlSnapshot(ev.websiteId, norm, device, key, sum, docW, docH);
     log.info({
       msg: "heatmap_dom_snapshot_stored",
       url: ev.url,
       norm,
       website_id: ev.websiteId,
       s3_key: key,
+      device,
     });
   }
 

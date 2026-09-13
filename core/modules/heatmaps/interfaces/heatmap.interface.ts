@@ -55,8 +55,23 @@ export type HeatmapLayout = {
   image_url_expires_at: string;
   html_url?: string;
   html_url_expires_at?: string;
+  /**
+   * Layout box this background was captured at, in CSS pixels. Authoritative for
+   * rendering: points are normalized against these dimensions, so the preview must
+   * lay the snapshot out at this width and scale from there. Measuring the rendered
+   * iframe instead is circular — its width is whatever the panel gave it, and a
+   * responsive page reflows to match.
+   */
   doc_width: number;
   doc_height: number;
+  /** Bucket this background was captured on — `desktop`, `tablet` or `mobile`. */
+  device_type: string;
+  /**
+   * True when no background exists for the requested bucket and another one is being
+   * shown instead. The layout underneath will not match the points exactly, and the
+   * dashboard says so rather than presenting it as an accurate overlay.
+   */
+  device_fallback: boolean;
 };
 
 /**
@@ -111,6 +126,7 @@ export interface HeatmapQuery {
   getLayoutSnapshot(
     websiteRef: string,
     pagePath: string,
+    device?: string,
   ): Promise<{ layout: HeatmapLayout | null }>;
 }
 

@@ -43,6 +43,13 @@ import {
   type HeatmapPageScreenshot,
   type HeatmapPoint as ApiHeatmapPoint,
 } from '@/lib/heatmaps-api';
+import {
+  clampLayoutPx,
+  heatmapCaptureBox,
+  heatmapPreviewScale,
+  HEATMAP_DIM_CAP,
+  MIN_CAPTURE_PX,
+} from '@/lib/heatmaps/preview-geometry';
 import { normalizeWebsiteOriginForPreview } from '@/lib/website-preview-url';
 import { getWebsiteByAnyId } from '@/lib/websites-api';
 import { useToast } from '@/hooks/use-toast';
@@ -100,7 +107,7 @@ function heatmapPageHeading(path: string, websiteId?: string): { title: string; 
 }
 
 /** Logical doc bounds for nx/ny math (keeps coordinates consistent). */
-const HEATMAP_DIM_CAP = 32_000;
+
 /** Hard cap for canvas + preview layers — larger sizes freeze the tab (multi‑Mpx canvases). */
 const HEATMAP_PREVIEW_MAX_EDGE = 4096;
 const HEATMAP_PREVIEW_MAX_AREA = 10_000_000;
@@ -362,24 +369,40 @@ function HeatmapPreviewBrowserChrome({
   underlay,
   loadState,
   usingPageVisual = false,
+  capturedOn = null,
+  requestedDevice = 'all',
 }: {
   pageUrl: string;
   underlay: PreviewUnderlay;
   loadState: 'idle' | 'loading' | 'loaded' | 'error';
   /** True when showing a captured screenshot or live page under the heat layer. */
   usingPageVisual?: boolean;
+  /**
+   * Bucket the shown background was captured on, when it is not the one asked for.
+   * A responsive page reflows between buckets, so the dots sit on a layout that is
+   * close but not the one those visitors saw — worth saying out loud rather than
+   * presenting an approximate overlay as exact.
+   */
+  capturedOn?: string | null;
+  requestedDevice?: string;
 }) {
   const displayUrl = pageUrl.trim() || '—';
   const secure     = /^https:\/\//i.test(pageUrl);
+  const showFallbackNote =
+    usingPageVisual && !!capturedOn && requestedDevice !== 'all' && loadState !== 'loading';
   const statusLead =
     underlay === 'heat-only'
       ? 'Heat only · '
       : usingPageVisual
         ? loadState === 'loading'
           ? 'Loading screenshot · '
-          : 'Captured screenshot · '
+          : showFallbackNote
+            ? `${capturedOn} screenshot · `
+            : 'Captured screenshot · '
         : 'No screenshot yet · ';
-  const barTitle = `${statusLead}${displayUrl}`;
+  const barTitle = showFallbackNote
+    ? `No ${requestedDevice} capture yet — showing the ${capturedOn} one, so the layout under the points is approximate. ${displayUrl}`
+    : `${statusLead}${displayUrl}`;
 
   const openExternal = () => {
     if (!pageUrl.trim()) return;
@@ -479,12 +502,15 @@ function HeatmapViewer({
   underlay,
   preferredViewportWidth = null,
   pageScreenshot = null,
+  requestedDevice = 'all',
 }: {
   pageUrl: string;
   points: HeatPoint[];
   heatType: HeatType;
   overlayOpacity?: number;
   underlay: PreviewUnderlay;
+  /** Device bucket the viewer asked for, so the chrome can flag a fallback background. */
+  requestedDevice?: string;
   preferredViewportWidth?: number | null;
   pageScreenshot?: HeatmapPageScreenshot | null;
 }) {
@@ -506,54 +532,69 @@ function HeatmapViewer({
     [points, heatType, viewPort.w],
   );
 
+  /**
+   * The layout box the stored background was captured at, in CSS pixels.
+   *
+   * This is the coordinate system the points live in: the tracker divides each click's
+   * page position by the document it measured, and stores that same document as
+   * `doc_width`/`doc_height` alongside the snapshot. Rendering at this box is what makes
+   * `nx * width` land on the element that was clicked.
+   *
+   * Deliberately *not* derived from the rendered iframe. That measurement is circular —
+   * the iframe is laid out at whatever width the panel happens to give it, a responsive
+   * page reflows to match, and it then reports that reflowed size back as if it were
+   * intrinsic. Trusting it produced a different canvas on every load of the same page
+   * (849x4096 one render, 1048x1272 the next, against a page captured at 1470x1256),
+   * which no fixed offset could correct.
+   */
+  const captureBox = useMemo(
+    () => heatmapCaptureBox(pageScreenshot, shotNatural),
+    [pageScreenshot, shotNatural],
+  );
+
   const docPx = useMemo(() => {
-    const natH = shotNatural && shotNatural.h > 200 ? shotNatural.h : 0;
-    // Measured height (iframe scrollHeight via postMessage, or JPEG natural height) is
-    // ground truth — trust it exactly. Maxing it with a click-spread guess used to
-    // inflate the canvas past the real page, leaving empty space and misaligning dots.
-    if (natH > 200) {
-      return Math.min(HEATMAP_DIM_CAP, natH);
-    }
-    // Stored doc_height is the real measured page height at capture time — governs the
-    // canvas in all modes (screenshot or heat-only) until the live measurement arrives.
-    const sh = pageScreenshot && pageScreenshot.doc_height > 200 ? pageScreenshot.doc_height : 0;
-    if (sh > 200) {
-      return Math.min(HEATMAP_DIM_CAP, sh);
-    }
-    // No snapshot yet: fall back to the click/scroll-spread estimate.
+    if (captureBox) return Math.min(HEATMAP_DIM_CAP, captureBox.h);
+    // No snapshot at all — heat-only mode. Nothing constrains the canvas but the data,
+    // so estimate the page height from how far down the clicks and scrolls reach.
     const dataH = documentPixelHeightForHeatmap(points, heatType, viewPort.w, null);
     return Math.min(HEATMAP_DIM_CAP, Math.max(dataH, docHeightHint));
-  }, [points, heatType, viewPort.w, docHeightHint, pageScreenshot, shotNatural]);
+  }, [captureBox, points, heatType, viewPort.w, docHeightHint]);
 
+  /**
+   * The layout box everything is positioned in: the iframe's CSS width, the canvas's CSS
+   * size, and the space `nx * w, ny * h` maps into. It is the capture box exactly —
+   * never clamped. Clamping this is what a memory cap must not do, because shrinking the
+   * width reflows the responsive page inside the iframe and moves every element out from
+   * under its dots. Oversized previews are handled by `previewScale` (a CSS transform,
+   * which scales without reflowing) and by `canvasRes` (fewer pixels, same box).
+   */
   const dims = useMemo(() => {
-    // Real captured width is ground truth: render the snapshot at the width it was
-    // captured at so its CSS media queries reproduce the captured layout and the dots
-    // line up. Only fall back to the click-spread guess when no snapshot width exists.
-    const natW = shotNatural && shotNatural.w > 200 ? shotNatural.w : 0;
-    const shotW =
-      pageScreenshot && pageScreenshot.doc_width > 200 ? pageScreenshot.doc_width : 0;
-    const realW = natW || shotW;
-    let w: number;
-    if (realW > 0) {
-      w = Math.min(HEATMAP_DIM_CAP, Math.max(320, realW));
-    } else {
-      const dataW = documentPixelWidthForHeatmap(points, viewPort.w);
-      const captureW =
-        preferredViewportWidth != null &&
-        preferredViewportWidth >= 320 &&
-        preferredViewportWidth <= HEATMAP_DIM_CAP
-          ? preferredViewportWidth
-          : 0;
-      w = Math.min(HEATMAP_DIM_CAP, Math.max(320, viewPort.w, dataW, captureW));
+    if (captureBox) {
+      return { w: clampLayoutPx(captureBox.w), h: clampLayoutPx(docPx) };
     }
-    return clampHeatmapPreviewDimensions(w, docPx);
-  }, [viewPort.w, docPx, points, preferredViewportWidth, pageScreenshot, shotNatural]);
+    const dataW = documentPixelWidthForHeatmap(points, viewPort.w);
+    const captureW =
+      preferredViewportWidth != null &&
+      preferredViewportWidth >= MIN_CAPTURE_PX &&
+      preferredViewportWidth <= HEATMAP_DIM_CAP
+        ? preferredViewportWidth
+        : 0;
+    const w = Math.max(MIN_CAPTURE_PX, viewPort.w, dataW, captureW);
+    return { w: clampLayoutPx(w), h: clampLayoutPx(docPx) };
+  }, [captureBox, docPx, viewPort.w, points, preferredViewportWidth]);
 
-  const previewScale = useMemo(() => {
-    if (viewPort.w <= 0 || dims.w <= 0) return 1;
-    if (dims.w <= viewPort.w) return 1;
-    return Math.max(0.2, Math.min(1, viewPort.w / dims.w));
-  }, [viewPort.w, dims.w]);
+  /**
+   * Backing-store resolution for the heat canvas, capped so a tall page cannot allocate a
+   * multi-megapixel surface and freeze the tab. The canvas is still *displayed* at
+   * `dims`, so a lower resolution costs sharpness and nothing else — the layer is soft
+   * radial gradients, which survive downscaling without a visible seam.
+   */
+  const canvasRes = useMemo(() => clampHeatmapPreviewDimensions(dims.w, dims.h), [dims]);
+
+  const previewScale = useMemo(
+    () => heatmapPreviewScale(dims.w, viewPort.w),
+    [viewPort.w, dims.w],
+  );
 
   const scaledOuterW = Math.max(1, Math.round(dims.w * previewScale));
   const scaledOuterH = Math.max(1, Math.round(dims.h * previewScale));
@@ -592,11 +633,11 @@ function HeatmapViewer({
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (heatType === 'scroll') {
-      drawScrollHeatmap(canvas, points, dims.w, dims.h);
+      drawScrollHeatmap(canvas, points, canvasRes.w, canvasRes.h);
     } else {
-      drawClickHeatmap(canvas, points, dims.w, dims.h);
+      drawClickHeatmap(canvas, points, canvasRes.w, canvasRes.h);
     }
-  }, [points, dims, heatType]);
+  }, [points, canvasRes, heatType]);
 
   // Listen for the postMessage sent by the injected measurement script inside the HTML
   // snapshot iframe. The snapshot is served from S3 (cross-origin), so contentDocument
@@ -636,6 +677,8 @@ function HeatmapViewer({
         underlay={underlay}
         loadState={loadState}
         usingPageVisual={screenshotActive}
+        capturedOn={pageScreenshot?.device_fallback ? (pageScreenshot.device_type ?? null) : null}
+        requestedDevice={requestedDevice}
       />
       <div
         ref={scrollRef}
@@ -725,8 +768,8 @@ function HeatmapViewer({
                 width: dims.w,
                 height: dims.h,
               }}
-              width={dims.w}
-              height={dims.h}
+              width={canvasRes.w}
+              height={canvasRes.h}
             />
 
             {showLoadingOverlay && (
@@ -806,9 +849,11 @@ export default function HeatmapDetailPage() {
     staleTime: 60_000,
   });
 
+  // Keyed by device: backgrounds are stored per bucket because a responsive page
+  // reflows between them, and the points drawn on one cannot be drawn on another.
   const { data: pageScreenshot, isLoading: screenshotLoading } = useQuery({
-    queryKey:  ['heatmap-screenshot', websiteId, urlPath],
-    queryFn:   () => getHeatmapPageScreenshot(websiteId, urlPath),
+    queryKey:  ['heatmap-screenshot', websiteId, urlPath, device],
+    queryFn:   () => getHeatmapPageScreenshot(websiteId, urlPath, device),
     enabled:   Boolean(websiteId && !isDemoMode),
     staleTime: 180_000,
     refetchOnWindowFocus: false,
@@ -1143,6 +1188,7 @@ export default function HeatmapDetailPage() {
                   underlay={previewUnderlay}
                   preferredViewportWidth={preferredViewportWidth}
                   pageScreenshot={pageScreenshot ?? null}
+                  requestedDevice={device}
                 />
               )}
               {points.length === 0 && !isLoading && !isDemoMode && (

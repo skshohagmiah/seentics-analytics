@@ -711,6 +711,13 @@ const markHeatmapScreenshotSentForPath = () => {
   catch { /* ignore */ }
 };
 
+/**
+ * How long a page must have been on screen before an unload-time capture is worth
+ * storing. Below this the document is still assembling and the snapshot would depict a
+ * layout no visitor saw — worse than having none, because the points would be drawn on it.
+ */
+const MIN_DWELL_FOR_LEAVE_SNAPSHOT_MS = 800;
+
 /** Timeouts queued after load/navigation to let the page fully render first. */
 let screenshotScheduleTimeouts  = [];
 let screenshotLongPageInterval  = null;
@@ -765,6 +772,23 @@ const scheduleHeatmapScreenshotAfterAppIdle = () => {
   // Primary: capture DOM snapshot directly from the browser — always works,
   // no authentication or X-Frame-Options issues.
   screenshotScheduleTimeouts.push(window.setTimeout(captureAndQueueDomSnapshot, 2_500));
+};
+
+/**
+ * Last chance to capture the layout: the visitor is leaving and the scheduled
+ * post-render capture has not run.
+ *
+ * Without this a page nobody lingers on never gets a background, and its heatmap shows
+ * points over nothing — the common case being an app route people click straight
+ * through. The dwell floor keeps a half-rendered document out of storage, and the
+ * per-path session marker means this costs one serialization per path at most.
+ */
+const captureDomSnapshotBeforeLeaving = () => {
+  if (cfg.heatmap_layout_enabled === false) return;
+  if (hasSentHeatmapScreenshotForPath()) return;
+  if (Date.now() - pageEnterMs < MIN_DWELL_FOR_LEAVE_SNAPSHOT_MS) return;
+  clearScreenshotScheduleTimers();
+  captureAndQueueDomSnapshot();
 };
 
 /**
@@ -2045,9 +2069,15 @@ const init = () => {
 
   // Flush all queued data when the page is hidden (tab switch, navigation away, close).
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushBeacon();
+    if (document.visibilityState === 'hidden') {
+      captureDomSnapshotBeforeLeaving();
+      flushBeacon();
+    }
   });
-  window.addEventListener('pagehide', flushBeacon);
+  window.addEventListener('pagehide', () => {
+    captureDomSnapshotBeforeLeaving();
+    flushBeacon();
+  });
 
   fetch(apiHost + '/api/v1/tracker/init/' + websiteId)
     .then(async (response) => {

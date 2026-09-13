@@ -3,6 +3,7 @@ import type { Page } from "playwright";
 import { createScreenshotPage, closeBrowser } from "./playwright-browser";
 import { putJpeg } from "../../../platform/lib/s3";
 import { heatmapScreenshotKey, layoutPathSlot } from "./keys";
+import { snapshotDeviceBucketForWidth } from "./device";
 import { getScreenshotCache } from "../services/screenshot-cache";
 import { log as baseLog } from "../../../platform/lib/logger";
 
@@ -247,6 +248,9 @@ export async function captureAndStoreScreenshot(
 
   const force = options?.force ?? false;
   const checkOnly = options?.checkOnly ?? false;
+  // Playwright renders at a chosen viewport, so the bucket follows that width rather
+  // than a user agent. The default is 1920, i.e. desktop.
+  const device = snapshotDeviceBucketForWidth(options?.viewportWidth ?? 1920);
 
   try {
     const cache = getScreenshotCache();
@@ -267,7 +271,7 @@ export async function captureAndStoreScreenshot(
 
     // SECOND: Check database if cache miss
     // This avoids launching Playwright if we already have the screenshot!
-    const existing = await getLayoutSnapshot(websiteId, pagePath);
+    const existing = await getLayoutSnapshot(websiteId, pagePath, device);
 
     // If screenshot exists and we're not forcing re-capture
     if (existing?.s3_key && existing?.content_sha256) {
@@ -306,7 +310,7 @@ export async function captureAndStoreScreenshot(
     });
 
     // Store in S3
-    const s3Key = heatmapScreenshotKey(websiteId, layoutPathSlot(websiteId, pagePath));
+    const s3Key = heatmapScreenshotKey(websiteId, layoutPathSlot(websiteId, pagePath, device));
     await putJpeg(s3Bucket, s3Key, result.buffer);
 
     // Cache the newly stored screenshot
@@ -347,7 +351,7 @@ export async function captureAndStoreScreenshot(
       ...options,
     });
 
-    const s3Key = heatmapScreenshotKey(websiteId, layoutPathSlot(websiteId, pagePath));
+    const s3Key = heatmapScreenshotKey(websiteId, layoutPathSlot(websiteId, pagePath, device));
     await putJpeg(s3Bucket, s3Key, result.buffer);
 
     // Cache the newly stored screenshot

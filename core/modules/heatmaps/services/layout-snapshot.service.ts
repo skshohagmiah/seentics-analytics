@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { env } from "../../../config";
 import { heatmapScreenshotKey, layoutPathSlot } from "../lib/keys";
+import { coerceSnapshotDeviceBucket, type SnapshotDeviceBucket } from "../lib/device";
 import { getLayoutSnapshot, upsertLayoutSnapshot } from "../lib/layout-db";
 import { presignGet, putJpeg } from "../../../platform/lib/s3";
 import type { HeatmapLayout, ResolvedWebsite } from "../interfaces";
@@ -34,8 +35,9 @@ const MIN_PLAUSIBLE_DOC_PX = 200;
 export async function readLayoutSnapshot(
   websiteId: string,
   normalizedPath: string,
+  device: SnapshotDeviceBucket = "desktop",
 ): Promise<{ layout: HeatmapLayout | null; missing: boolean; stale: boolean }> {
-  const row = await getLayoutSnapshot(websiteId, normalizedPath);
+  const row = await getLayoutSnapshot(websiteId, normalizedPath, device);
 
   // A row counts as present if either a JPEG (`s3_key`) or a DOM HTML snapshot
   // (`html_s3_key`) is stored. `upsertLayoutHtmlSnapshot` inserts with `s3_key=''`,
@@ -67,6 +69,8 @@ export async function readLayoutSnapshot(
       html_url_expires_at: htmlUrl ? deadline : undefined,
       doc_width: row.doc_width,
       doc_height: row.doc_height,
+      device_type: row.device_type,
+      device_fallback: row.device_type !== device,
     },
     missing: false,
     stale,
@@ -131,8 +135,14 @@ export async function storeDashboardScreenshot(
   if (!Number.isFinite(dW) || dW < MIN_PLAUSIBLE_DOC_PX) dW = FALLBACK_DOC_WIDTH;
   if (!Number.isFinite(dH) || dH < MIN_PLAUSIBLE_DOC_PX) dH = FALLBACK_DOC_HEIGHT;
 
-  const key = heatmapScreenshotKey(resolved.websiteId, layoutPathSlot(resolved.websiteId, normalizedPath));
+  // The dashboard renders its own capture at a desktop width; if a caller ever
+  // renders narrower it should pass the bucket through rather than defaulting here.
+  const device = coerceSnapshotDeviceBucket("desktop");
+  const key = heatmapScreenshotKey(
+    resolved.websiteId,
+    layoutPathSlot(resolved.websiteId, normalizedPath, device),
+  );
   await putJpeg(cfg.s3.heatmapBucket, key, jpeg);
-  await upsertLayoutSnapshot(resolved.websiteId, normalizedPath, key, sum, dW, dH);
+  await upsertLayoutSnapshot(resolved.websiteId, normalizedPath, device, key, sum, dW, dH);
   return key;
 }

@@ -8,6 +8,12 @@ export const heatmapDataQuerySchema = z.object({
 
 export const heatmapSnapshotQuerySchema = z.object({
   page_path: zNonEmptyString.max(2048),
+  /**
+   * Which layout to render underneath the points. Backgrounds are stored per device
+   * bucket because a responsive page reflows between them; anything unrecognised
+   * (including the dashboard's "all devices") resolves to desktop.
+   */
+  device: z.enum(["desktop", "tablet", "mobile"]).optional(),
 });
 
 export const heatmapBulkDeleteSchema = z.object({

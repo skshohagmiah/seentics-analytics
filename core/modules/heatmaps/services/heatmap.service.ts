@@ -17,6 +17,7 @@ import {
 } from "./layout-snapshot.service";
 import { getHeatmapPoints, listHeatmapPages } from "./page-query.service";
 import { deleteHeatmaps } from "../repositories/heatmap-writes.repository";
+import { coerceSnapshotDeviceBucket } from "../lib/device";
 
 const log = baseLog.child({ category: "heatmap_screenshot" });
 
@@ -76,16 +77,19 @@ export class HeatmapService implements HeatmapQuery, HeatmapMutations {
   async getLayoutSnapshot(
     websiteRef: string,
     pagePath: string,
+    device?: string,
   ): Promise<{ layout: HeatmapLayout | null }> {
     const resolved = await this.resolve(websiteRef);
     const norm = normalizeHeatmapPagePath(pagePath);
-    const snapshot = await readLayoutSnapshot(resolved.websiteId, norm);
+    const bucket = coerceSnapshotDeviceBucket(device);
+    const snapshot = await readLayoutSnapshot(resolved.websiteId, norm, bucket);
 
     if (snapshot.missing) {
       log.info({
         msg: "heatmap_snapshot_miss",
         website_uuid: resolved.websiteId,
         norm,
+        device: bucket,
         triggering_autocapture: true,
       });
       // Detached: the dashboard renders the points without a backdrop and picks

@@ -128,6 +128,8 @@ const LAYOUT: HeatmapLayout = {
   image_url_expires_at: "2026-09-01T01:00:00.000Z",
   doc_width: 1920,
   doc_height: 4200,
+  device_type: "desktop",
+  device_fallback: false,
 };
 
 /** Records every call, so a test can assert a refused request never reached the service. */

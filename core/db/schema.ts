@@ -481,10 +481,21 @@ export const heatmapPageSnapshots = pgTable(
     docWidth: integer("doc_width").notNull(),
     docHeight: integer("doc_height").notNull(),
     htmlS3Key: text("html_s3_key"),
+    /**
+     * Which device bucket this background was captured on — the same grain
+     * `heatmap_points.device_type` uses. A responsive page reflows between buckets,
+     * so a desktop capture cannot host mobile points: identical nx/ny land on
+     * different elements. One row per (page, device).
+     */
+    deviceType: text("device_type").notNull().default("desktop"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("heatmap_page_snapshots_website_page_uq").on(t.websiteId, t.pagePath),
+    uniqueIndex("heatmap_page_snapshots_website_page_device_uq").on(
+      t.websiteId,
+      t.pagePath,
+      t.deviceType,
+    ),
     index("ix_heatmap_snapshots_website_updated").on(t.websiteId, t.updatedAt),
   ],
 );

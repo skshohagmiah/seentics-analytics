@@ -76,14 +76,32 @@ export interface HeatmapPageScreenshot {
   html_url_expires_at?:  string;
   doc_width:             number;
   doc_height:            number;
+  /** Bucket this background was captured on — `desktop`, `tablet` or `mobile`. */
+  device_type?:          string;
+  /** True when the requested bucket had no capture and another one is being shown. */
+  device_fallback?:      boolean;
 }
 
+/**
+ * The page background for one device bucket.
+ *
+ * `device` matters: a responsive page reflows between buckets, so a desktop capture
+ * cannot host mobile points — the same normalized coordinates land on different
+ * elements. The server falls back to another bucket rather than returning nothing and
+ * flags it as `device_fallback` so the dashboard can say the overlay is approximate.
+ */
 export async function getHeatmapPageScreenshot(
   websiteId: string,
   pagePath: string,
+  device?: string,
 ): Promise<HeatmapPageScreenshot | null> {
   const res = await api.get(`/heatmaps/${websiteId}/layout-snapshot`, {
-    params: { page_path: normalizeHeatmapPagePath(pagePath) },
+    params: {
+      page_path: normalizeHeatmapPagePath(pagePath),
+      // "all" is a points filter, not a layout — desktop is the widest and most
+      // representative background to draw an everything-bucket heatmap on.
+      ...(device && device !== 'all' ? { device } : {}),
+    },
   });
   const layout = (res.data as { layout?: HeatmapPageScreenshot | null }).layout;
   return layout ?? null;

@@ -107,7 +107,7 @@ export function createHeatmapRoutes(deps: {
     const q = parseQuery(c, heatmapSnapshotQuerySchema);
     if (!q.ok) return q.res;
 
-    const out = await heatmaps.getLayoutSnapshot(websiteRef, q.data.page_path);
+    const out = await heatmaps.getLayoutSnapshot(websiteRef, q.data.page_path, q.data.device);
     return c.json(out);
   }));
 
